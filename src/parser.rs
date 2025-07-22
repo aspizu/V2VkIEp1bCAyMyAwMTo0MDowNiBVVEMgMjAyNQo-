@@ -373,7 +373,67 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_assign(&mut self) -> Option<ast::Assign> {
-        todo!()
+        let old = self.current;
+        if let Token::Text(txt) = self.peek() {
+            let start_idx = self.current;
+            self.expect_text();
+            let var_decl: Option<ast::Assign> = 'var_decl: {
+                if let Some((label, value)) = txt.split_once('=') {
+                    // If it starts with = then it's not valid assignment (e.g. `=FOO`)
+                    if label.is_empty() {
+                        break 'var_decl None;
+                    }
+                    if !is_valid_var_name(label) {
+                        break 'var_decl None;
+                    }
+                    if value.is_empty() {
+                        if self.delimits(self.peek()) {
+                            self.expect_delimit();
+                            break 'var_decl Some(ast::Assign {
+                                label: label.into(),
+                                value: ast::Atom::Simple(ast::SimpleAtom::Text("".into())),
+                            });
+                        }
+                        // TODO: handle error reporting
+                        let atom = self.parse_atom().expect("Expected an atom");
+                        break 'var_decl Some(ast::Assign {
+                            label: label.into(),
+                            value: atom,
+                        });
+                    }
+                    if self.delimits(self.peek()) {
+                        self.expect_delimit();
+                        break 'var_decl Some(ast::Assign {
+                            label: label.into(),
+                            value: ast::Atom::Simple(ast::SimpleAtom::Text(value.into())),
+                        });
+                    }
+                    // TODO: handle error reporting
+                    let right = self.parse_atom().expect("Expected an atom");
+                    let left = ast::Atom::Simple(ast::SimpleAtom::Text(value.into()));
+                    let merged = ast::Atom::merge(left, right);
+                    break 'var_decl Some(ast::Assign {
+                        label: label.into(),
+                        value: merged,
+                    });
+                }
+                break 'var_decl None;
+            };
+            if let Some(var_decl) = var_decl {
+                return Some(var_decl);
+            }
+            self.current = start_idx;
+            return None;
+        } else {
+            None
+        }
+    }
+
+    fn expect_text(&mut self) {
+        if !matches!(self.peek(), Token::Text(_)) {
+            panic!("Expected text token")
+        }
+        self.advance();
     }
 
     fn parse_atom(&mut self) -> Option<ast::Atom> {
@@ -560,4 +620,33 @@ impl<'a> Parser<'a> {
         }
         panic!("Expected a delimiter token");
     }
+}
+
+fn is_valid_var_name(var_name: &str) -> bool {
+    if var_name.is_empty() {
+        return false;
+    }
+
+    let mut chars = var_name.chars();
+
+    // Check first character
+    if let Some(first_char) = chars.next() {
+        match first_char {
+            '0'..='9' => return false,
+            'a'..='z' | 'A'..='Z' | '_' => {}
+            _ => return false,
+        }
+    } else {
+        return false;
+    }
+
+    // Check remaining characters
+    for c in chars {
+        match c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {}
+            _ => return false,
+        }
+    }
+
+    true
 }
