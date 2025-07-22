@@ -180,10 +180,13 @@ impl<'a> Parser<'a> {
         }
 
         if self.peek() == &Token::DoubleBracketOpen {
-            return self.parse_cond_expr();
+            return ast::Expr::CondExpr(self.parse_cond_expr());
         }
 
-        self.parse_simple_cmd()
+        match self.parse_simple_cmd() {
+            ast::CmdOrAssigns::Cmd(cmd) => ast::Expr::Cmd(cmd),
+            ast::CmdOrAssigns::Assigns(assigns) => ast::Expr::Assign(assigns),
+        }
     }
 
     fn parse_subshell(&mut self) -> ast::SubShell {
@@ -302,6 +305,15 @@ impl<'a> Parser<'a> {
                 };
             }
         }
+    }
+
+    fn parse_simple_cmd(&mut self) -> ast::CmdOrAssigns {
+        todo!()
+    }
+
+    fn parse_cond_expr(&mut self) -> ast::CondExpr {
+        self.expect(&Token::DoubleBracketOpen);
+        todo!("Conditional Expressions not implemented yet.")
     }
 
     fn match_if_clausetok(&mut self, token: IfClauseTok) -> bool {
