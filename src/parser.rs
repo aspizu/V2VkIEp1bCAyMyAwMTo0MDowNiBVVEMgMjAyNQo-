@@ -381,7 +381,31 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_redirect(&mut self) -> ParsedRedirect {
-        todo!()
+        let has_redirect: bool = matches!(self.peek(), Token::Redirect(..));
+        let flags: ast::RedirectFlags = if has_redirect {
+            if let Token::Redirect(r) = self.advance() {
+                r.clone()
+            } else {
+                unreachable!()
+            }
+        } else {
+            ast::RedirectFlags::default()
+        };
+        let redirect: Option<ast::Redirect> = if has_redirect {
+            if matches!(self.peek(), Token::PyObject(_)) {
+                todo!("implement python object redirection")
+            } else {
+                let Some(redirect_file) = self.parse_atom() else {
+                    // TODO: add error handling
+                    panic!("redirection with no file");
+                };
+                Some(ast::Redirect::Atom(redirect_file))
+            }
+        } else {
+            None
+        };
+        // TODO check for multiple redirects and error
+        ParsedRedirect { redirect, flags }
     }
 
     fn parse_cond_expr(&mut self) -> ast::CondExpr {

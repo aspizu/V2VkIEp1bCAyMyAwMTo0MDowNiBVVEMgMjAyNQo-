@@ -28,7 +28,7 @@ pub enum Token {
     Text(ArcStr),
     SingleQuotedText(ArcStr),
     DoubleQuotedText(ArcStr),
-    PyObject,
+    PyObject(()),
     DoubleBracketOpen,
     DoubleBracketClose,
     Delimit,
