@@ -15,7 +15,7 @@ impl Into<Token> for SubShellKind {
     }
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 enum IfClauseTok {
     If,
     Else,
@@ -29,10 +29,26 @@ impl From<&'_ Token> for Option<IfClauseTok> {
         if let Token::Text(text) = token {
             match text.as_str() {
                 "if" => Some(IfClauseTok::If),
-                _ => None
+                "else" => Some(IfClauseTok::Else),
+                "elif" => Some(IfClauseTok::Elif),
+                "then" => Some(IfClauseTok::Then),
+                "fi" => Some(IfClauseTok::Fi),
+                _ => None,
             }
-        } else { 
+        } else {
             None
+        }
+    }
+}
+
+impl From<&IfClauseTok> for &str {
+    fn from(tok: &IfClauseTok) -> Self {
+        match tok {
+            IfClauseTok::If => "if",
+            IfClauseTok::Else => "else",
+            IfClauseTok::Elif => "elif",
+            IfClauseTok::Then => "then",
+            IfClauseTok::Fi => "fi",
         }
     }
 }
@@ -183,17 +199,56 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_if_body(&mut self, )
+    fn parse_if_body(&mut self, until: &[IfClauseTok]) -> Vec<ast::Stmt> {
+        let mut ret = vec![];
+        while if self.inside_subshell.is_none() {
+            !self.peek_any_ifclausetok(until) && !self.peek_any(&[&Token::Eof])
+        } else {
+            !self.peek_any_ifclausetok(until)
+                && !self.peek_any(&[&self.inside_subshell.unwrap().into(), &Token::Eof])
+        } {
+            self.skip_newlines();
+            let stmt = self.parse_stmt();
+            ret.push(stmt);
+            self.skip_newlines();
+        }
+        ret
+    }
 
     fn parse_if_clause(&mut self) -> ast::If {
         self.except_if_clause_text_token("if");
-        let cond = self.parse_if_body();
+        let cond = self.parse_if_body(&[IfClauseTok::If]);
+        if !self.match_if_clausetok(IfClauseTok::Then) {
+            // TODO: Add error handling
+            panic!("Expected \"then\" but got: {}", self.peek());
+        }
+        todo!()
     }
 
-    fn except_if_clause_text_token(&mut self, if_clause_token: &str) -> &Token {
+    fn peek_any_ifclausetok(&self, tokens: &[IfClauseTok]) -> bool {
+        let peeked = self.peek();
+        let Token::Text(text) = peeked else {
+            return false;
+        };
+        for token in tokens {
+            let stok: &str = token.into();
+            if text.as_str() == stok {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn except_if_clause_text_token(&mut self, if_clause_token: &str) -> Token {
         if let Token::Text(text) = self.peek() {
-            if self.delimits(self.peek_n(1)) && text == if_clause_token {
-                let tok = self.advance();
+            let d = self.delimits(self.peek_n(1));
+            let mut x = false;
+            let mut tok = Token::Eof;
+            if d && text == if_clause_token {
+                tok = self.advance().clone();
+                x = true;
+            }
+            if x {
                 self.expect_delimit();
                 return tok;
             }
@@ -238,11 +293,15 @@ impl<'a> Parser<'a> {
         self.peek() == token
     }
 
+    fn peek_any(&self, tokens: &[&Token]) -> bool {
+        tokens.into_iter().map(|token| self.check(token)).any(|b| b)
+    }
+
     fn peek(&self) -> &Token {
         self.tokens.get(self.current).unwrap()
     }
 
-    fn peek_n(&mut self, n: usize) -> &Token {
+    fn peek_n(&self, n: usize) -> &Token {
         if self.current + n >= self.tokens.len() {
             return &self.tokens[self.tokens.len() - 1];
         }
