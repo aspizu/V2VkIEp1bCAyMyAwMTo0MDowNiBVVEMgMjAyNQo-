@@ -176,7 +176,7 @@ impl<'a> Parser<'a> {
         }
 
         if self.is_if_clause_text_token("if") {
-            return self.parse_if_clause();
+            return ast::Expr::If(self.parse_if_clause());
         }
 
         if self.peek() == &Token::DoubleBracketOpen {
@@ -216,13 +216,105 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_clause(&mut self) -> ast::If {
-        self.except_if_clause_text_token("if");
-        let cond = self.parse_if_body(&[IfClauseTok::If]);
+        self.expect_if_clause_text_token("if");
+        let cond = self.parse_if_body(&[IfClauseTok::Then]);
         if !self.match_if_clausetok(IfClauseTok::Then) {
             // TODO: Add error handling
             panic!("Expected \"then\" but got: {}", self.peek());
         }
-        todo!()
+        let then = self.parse_if_body(&[IfClauseTok::Else, IfClauseTok::Elif, IfClauseTok::Fi]);
+        let mut else_parts: Vec<Vec<ast::Stmt>> = vec![];
+
+        let if_clause_tok: IfClauseTok = match self.peek().into() {
+            Some(tok) => tok,
+            None => {
+                // TODO: add error handling
+                panic!(
+                    "Expected \"else\", \"elif\", or \"fi\" but got: {}",
+                    self.peek()
+                );
+            }
+        };
+
+        match if_clause_tok {
+            IfClauseTok::If | IfClauseTok::Then => {
+                // TODO: add error handling
+                panic!(
+                    "Expected \"else\", \"elif\", or \"fi\" but got: {}",
+                    self.peek()
+                );
+            }
+            IfClauseTok::Else => {
+                self.expect_if_clause_text_token("else");
+                let else_part = self.parse_if_body(&[IfClauseTok::Fi]);
+                if !self.match_if_clausetok(IfClauseTok::Fi) {
+                    panic!("Expected \"fi\" but got: {}", self.peek());
+                }
+                else_parts.push(else_part);
+                return ast::If {
+                    cond,
+                    then,
+                    else_parts,
+                };
+            }
+            IfClauseTok::Elif => {
+                loop {
+                    self.expect_if_clause_text_token("elif");
+                    let elif_cond = self.parse_if_body(&[IfClauseTok::Then]);
+                    if !self.match_if_clausetok(IfClauseTok::Then) {
+                        // TODO: add error handling
+                        panic!("Expected \"then\" but got: {}", self.peek());
+                    }
+                    let then_part = self.parse_if_body(&[
+                        IfClauseTok::Elif,
+                        IfClauseTok::Else,
+                        IfClauseTok::Fi,
+                    ]);
+                    else_parts.push(elif_cond);
+                    else_parts.push(then_part);
+
+                    match &self.peek().into() {
+                        Some(IfClauseTok::Elif) => continue,
+                        Some(IfClauseTok::Else) => {
+                            self.expect_if_clause_text_token("else");
+                            let else_part = self.parse_if_body(&[IfClauseTok::Fi]);
+                            else_parts.push(else_part);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+                if !self.match_if_clausetok(IfClauseTok::Fi) {
+                    panic!("Expected \"fi\" but got: {}", self.peek());
+                }
+                return ast::If {
+                    cond,
+                    then,
+                    else_parts,
+                };
+            }
+            IfClauseTok::Fi => {
+                self.expect_if_clause_text_token("fi");
+                return ast::If {
+                    cond,
+                    then,
+                    else_parts: vec![],
+                };
+            }
+        }
+    }
+
+    fn match_if_clausetok(&mut self, token: IfClauseTok) -> bool {
+        let Token::Text(text) = self.peek() else {
+            return false;
+        };
+        let stok: &str = (&token).into();
+        if self.delimits(self.peek_n(1)) && text.as_str() == stok {
+            self.advance();
+            self.expect_delimit();
+            return true;
+        }
+        false
     }
 
     fn peek_any_ifclausetok(&self, tokens: &[IfClauseTok]) -> bool {
@@ -239,7 +331,7 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn except_if_clause_text_token(&mut self, if_clause_token: &str) -> Token {
+    fn expect_if_clause_text_token(&mut self, if_clause_token: &str) -> Token {
         if let Token::Text(text) = self.peek() {
             let d = self.delimits(self.peek_n(1));
             let mut x = false;

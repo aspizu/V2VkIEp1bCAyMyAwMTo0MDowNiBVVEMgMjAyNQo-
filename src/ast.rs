@@ -61,8 +61,8 @@ pub struct SubShell {
 }
 
 pub struct If {
-    cond: Vec<Stmt>,
-    then: Vec<Stmt>,
+    pub cond: Vec<Stmt>,
+    pub then: Vec<Stmt>,
     /// From the spec:
     ///
     /// else_part        : Elif compound_list Then else_part
@@ -73,7 +73,7 @@ pub struct If {
     /// - 1                                   => just else
     /// - 2n (n is # of elif/then branches)   => n elif/then branches
     /// - 2n + 1                              => n elif/then branches and an else branch
-    else_parts: Vec<Vec<Stmt>>,
+    pub else_parts: Vec<Vec<Stmt>>,
 }
 
 pub struct CondExpr {}
