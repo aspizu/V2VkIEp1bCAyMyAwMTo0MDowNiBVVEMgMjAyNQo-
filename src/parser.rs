@@ -53,6 +53,11 @@ impl From<&IfClauseTok> for &str {
     }
 }
 
+struct ParsedRedirect {
+    redirect: Option<ast::Redirect>,
+    flags: ast::RedirectFlags,
+}
+
 struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
@@ -191,13 +196,13 @@ impl<'a> Parser<'a> {
 
     fn parse_subshell(&mut self) -> ast::SubShell {
         self.expect(&Token::OpenParen);
-        let subparser = self.make_subparser(SubShellKind::Normal);
+        let mut subparser = self.make_subparser(SubShellKind::Normal);
         let script = subparser.parse();
         self.continue_from_subparser(subparser);
         let parsed_redirect = self.parse_redirect();
         ast::SubShell {
             script,
-            redirect: parser_redirect.redirect,
+            redirect: parsed_redirect.redirect,
             redirect_flags: parsed_redirect.flags,
         }
     }
@@ -308,6 +313,74 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_simple_cmd(&mut self) -> ast::CmdOrAssigns {
+        let mut assigns: Vec<ast::Assign> = vec![];
+
+        while if self.inside_subshell.is_none() {
+            !self.check_any(&[&Token::Semicolon, &Token::Newline, &Token::Eof])
+        } else {
+            !self.check_any(&[
+                &Token::Semicolon,
+                &Token::Newline,
+                &Token::Eof,
+                &self.inside_subshell.unwrap().into(),
+            ])
+        } {
+            if let Some(assign) = self.parse_assign() {
+                assigns.push(assign);
+            } else {
+                break;
+            }
+        }
+
+        while if self.inside_subshell.is_none() {
+            !self.check_any(&[&Token::Semicolon, &Token::Newline, &Token::Eof])
+        } else {
+            !self.check_any(&[
+                &Token::Semicolon,
+                &Token::Newline,
+                &Token::Eof,
+                &self.inside_subshell.unwrap().into(),
+            ])
+        } {
+            if assigns.is_empty() {
+                // TODO: add error handling
+                panic!("expected a command or assignment");
+            }
+            return ast::CmdOrAssigns::Assigns(assigns);
+        }
+
+        let Some(name) = self.parse_atom() else {
+            if assigns.is_empty() {
+                // TODO: add error handling
+                panic!("expected a command or assignment but got smth else");
+            }
+            return ast::CmdOrAssigns::Assigns(assigns);
+        };
+
+        let mut name_and_args: Vec<ast::Atom> = vec![];
+        name_and_args.push(name);
+        while let Some(arg) = self.parse_atom() {
+            name_and_args.push(arg);
+        }
+        let parsed_redirect = self.parse_redirect();
+
+        ast::CmdOrAssigns::Cmd(ast::Cmd {
+            assigns,
+            name_and_args,
+            redirect: parsed_redirect.redirect,
+            redirect_flags: parsed_redirect.flags,
+        })
+    }
+
+    fn parse_assign(&mut self) -> Option<ast::Assign> {
+        todo!()
+    }
+
+    fn parse_atom(&mut self) -> Option<ast::Atom> {
+        todo!()
+    }
+
+    fn parse_redirect(&mut self) -> ParsedRedirect {
         todo!()
     }
 
