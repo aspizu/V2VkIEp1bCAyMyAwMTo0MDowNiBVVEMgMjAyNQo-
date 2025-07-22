@@ -9,7 +9,7 @@ pub struct Stmt {
 }
 
 pub enum Expr {
-    Assign(Assign),
+    Assign(Vec<Assign>),
     Binary(Box<Binary>),
     Pipeline(Pipeline),
     Cmd(Cmd),
@@ -17,6 +17,19 @@ pub enum Expr {
     If(If),
     CondExpr(CondExpr),
     Async(Box<Expr>),
+}
+
+impl Expr {
+    pub fn as_pipeline_item(self) -> Option<PipelineItem> {
+        match self {
+            Expr::Assign(assign) => Some(PipelineItem::Assigns(assign)),
+            Expr::Cmd(cmd) => Some(PipelineItem::Cmd(cmd)),
+            Expr::SubShell(sub_shell) => Some(PipelineItem::SubShell(sub_shell)),
+            Expr::If(if_) => Some(PipelineItem::If(if_)),
+            Expr::CondExpr(cond_expr) => Some(PipelineItem::CondExpr(cond_expr)),
+            _ => None,
+        }
+    }
 }
 
 pub struct Assign {
@@ -83,7 +96,7 @@ pub enum CmdOrAssigns {
     Assigns(Vec<Assign>),
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
 pub struct RedirectFlags {
     pub stdin: bool,
     pub stdout: bool,
@@ -154,6 +167,10 @@ impl RedirectFlags {
             duplicate_out: true,
             ..Default::default()
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !(self.append || self.duplicate_out || self.stderr || self.stdin || self.stdout)
     }
 }
 

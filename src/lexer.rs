@@ -53,9 +53,16 @@ impl<'a, 'b> Lexer<'a, 'b> {
             };
             let char = input.char;
             let escaped = input.escaped;
+            // Special token to denote substituted JS variables
+            // we use 8 or \b which is a non printable char
             if char == PLACEHOLDER {
                 todo!()
-            } else if !escaped {
+            }
+            // Handle non-escaped chars:
+            // 1. special syntax (operators, etc.)
+            // 2. lexing state switchers (quotes)
+            // 3. word breakers (spaces, etc.)
+            else if !escaped {
                 'escaped: {
                     match char {
                         b'[' => {
@@ -298,6 +305,123 @@ impl<'a, 'b> Lexer<'a, 'b> {
                             self.backtrack(snapshot);
                             break 'escaped;
                         }
+                        b'|' => {
+                            if matches!(self.state, State::Single | State::Double) {
+                                break 'escaped;
+                            }
+                            self.break_word_operator();
+                            let Some(next) = self.peek() else {
+                                panic!("Unexpected EOF") // TODO: Add error handling
+                            };
+                            if !next.escaped && next.char == b'&' {
+                                // TODO: Add error handling
+                                panic!("Piping stdout and stderr (`|&`) is not supported yet. Please file an issue on GitHub.")
+                            }
+                            if next.escaped || next.char != b'|' {
+                                self.tokens.push(Token::Pipe);
+                            } else if next.char == b'|' {
+                                self.eat().unwrap();
+                                self.tokens.push(Token::DoublePipe);
+                            }
+                            continue 'l;
+                        }
+                        b'>' => {
+                            if matches!(self.state, State::Single | State::Double) {
+                                break 'escaped;
+                            }
+                            self.break_word_operator();
+                            let redirect = self.eat_simple_redirect(false);
+                            self.tokens.push(Token::Redirect(redirect));
+                            continue 'l;
+                        }
+                        b'<' => {
+                            if matches!(self.state, State::Single | State::Double) {
+                                break 'escaped;
+                            }
+                            self.break_word_operator();
+                            let redirect = self.eat_simple_redirect(true);
+                            self.tokens.push(Token::Redirect(redirect));
+                            continue 'l;
+                        }
+                        b'&' => {
+                            if matches!(self.state, State::Single | State::Double) {
+                                break 'escaped;
+                            }
+                            self.break_word_operator();
+                            let Some(next) = self.peek() else {
+                                self.tokens.push(Token::Ampersand);
+                                continue 'l;
+                            };
+                            if next.char == b'>' && !next.escaped {
+                                self.eat();
+                                let inner = if self.eat_simple_redirect_operator(false) {
+                                    RedirectFlags::andrightright()
+                                } else {
+                                    RedirectFlags::andright()
+                                };
+                                self.tokens.push(Token::Redirect(inner));
+                            } else if next.escaped || next.char != b'&' {
+                                self.tokens.push(Token::Ampersand);
+                            } else if next.char == b'&' {
+                                self.eat().unwrap();
+                                self.tokens.push(Token::DoubleAmpersand);
+                            } else {
+                                self.tokens.push(Token::Ampersand);
+                                continue 'l;
+                            }
+                        }
+                        b'\'' => {
+                            match self.state {
+                                State::Single => {
+                                    self.state = State::Normal;
+                                }
+                                State::Normal => {
+                                    self.state = State::Single;
+                                }
+                                _ => {}
+                            }
+                            break 'escaped;
+                        }
+                        b'"' => {
+                            match self.state {
+                                State::Single => break 'escaped,
+                                State::Normal => {
+                                    self.break_word(false);
+                                    self.state = State::Double;
+                                }
+                                State::Double => {
+                                    self.break_word(false);
+                                    self.state = State::Normal;
+                                }
+                            }
+                            continue 'l;
+                        }
+                        b' ' => {
+                            if matches!(self.state, State::Normal) {
+                                self.break_word_impl(true, true, false);
+                                continue 'l;
+                            }
+                            break 'escaped;
+                        }
+                        _ => break 'escaped,
+                    }
+                    continue 'l;
+                }
+            }
+            // Treat newline preceded by backslash as whitespace
+            else if char == b'\n' {
+                if !matches!(self.state, State::Double) {
+                    self.break_word_impl(true, true, false);
+                }
+                continue 'l;
+            }
+            if let Some(subshell_kind) = self.in_subshell {
+                match subshell_kind {
+                    SubShellKind::Dollar | SubShellKind::Backtick => {
+                        panic!("Unclosed command substitution")
+                    }
+                    SubShellKind::Normal => {
+                        panic!("Unclosed subshell")
                     }
                 }
             }

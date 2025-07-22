@@ -2,6 +2,7 @@ use arcstr::ArcStr;
 
 use crate::ast::RedirectFlags;
 
+#[derive(Clone, Eq, PartialEq)]
 pub enum Token {
     Pipe,
     DoublePipe,
