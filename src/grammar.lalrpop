@@ -1,0 +1,201 @@
+// use crate::lexer::Token;
+// use arcstr::ArcStr;
+// use std::sync::Arc;
+
+// grammar;
+
+// // Main entry point - a shell script is a sequence of commands
+// pub Script: Vec<Command> = {
+//     <commands:(<Command> <Terminator?>)*> => commands,
+// };
+
+// Terminator: () = {
+//     Semicolon => (),
+//     Newline => (),
+// };
+
+// // Command can be a simple command, pipeline, or control structure
+// pub Command: Command = {
+//     Pipeline,
+//     ControlStructure,
+// };
+
+// // Pipeline of commands connected by pipes
+// Pipeline: Command = {
+//     <left:AndOrExpression> Pipe <right:Pipeline> => {
+//         Command::Pipeline(Box::new(left), Box::new(right))
+//     },
+//     AndOrExpression,
+// };
+
+// // Logical AND/OR expressions
+// AndOrExpression: Command = {
+//     <left:SimpleCommand> And <right:AndOrExpression> => {
+//         Command::And(Box::new(left), Box::new(right))
+//     },
+//     <left:SimpleCommand> Or <right:AndOrExpression> => {
+//         Command::Or(Box::new(left), Box::new(right))
+//     },
+//     SimpleCommand,
+// };
+
+// // Simple command - avoid empty patterns entirely
+// SimpleCommand: Command = {
+//     // Just a command name
+//     <name:WORD> <bg:Ampersand?> => {
+//         Command::Simple {
+//             name: Some(name),
+//             args: vec![],
+//             redirects: vec![],
+//             background: bg.is_some(),
+//         }
+//     },
+//     // Command with name and arguments/redirections
+//     <name:WORD> <items:CommandItemList> <bg:Ampersand?> => {
+//         let mut args = vec![];
+//         let mut redirects = vec![];
+        
+//         for item in items {
+//             match item {
+//                 CommandItem::Arg(arg) => args.push(arg),
+//                 CommandItem::Redirect(redirect) => redirects.push(redirect),
+//             }
+//         }
+        
+//         Command::Simple {
+//             name: Some(name),
+//             args,
+//             redirects,
+//             background: bg.is_some(),
+//         }
+//     },
+//     // Just redirections (no command name)
+//     <items:RedirectionList> <bg:Ampersand?> => {
+//         Command::Simple {
+//             name: None,
+//             args: vec![],
+//             redirects: items,
+//             background: bg.is_some(),
+//         }
+//     },
+// };
+
+// // Non-empty list of command items (arguments or redirections)
+// CommandItemList: Vec<CommandItem> = {
+//     <item:CommandItem> => vec![item],
+//     <mut list:CommandItemList> <item:CommandItem> => {
+//         list.push(item);
+//         list
+//     },
+// };
+
+// // Non-empty list of redirections only
+// RedirectionList: Vec<Redirection> = {
+//     <redirect:Redirection> => vec![redirect],
+//     <mut list:RedirectionList> <redirect:Redirection> => {
+//         list.push(redirect);
+//         list
+//     },
+// };
+
+// // Unified command items (arguments or redirections)
+// CommandItem: CommandItem = {
+//     Argument => CommandItem::Arg(<>),
+//     Redirection => CommandItem::Redirect(<>),
+// };
+
+// // Control structures
+// ControlStructure: Command = {
+//     Block,
+//     Subshell,
+// };
+
+// // Block (command grouping)
+// Block: Command = {
+//     LeftBrace <commands:Command+> RightBrace => Command::Block(commands),
+//     LeftBrace RightBrace => Command::Block(vec![]),
+// };
+
+// // Subshell
+// Subshell: Command = {
+//     LeftParen <commands:Command+> RightParen => Command::Subshell(commands),
+//     LeftParen RightParen => Command::Subshell(vec![]),
+// };
+
+// // Redirections
+// Redirection: Redirection = {
+//     RedirectOut <target:RedirectionTarget> => {
+//         Redirection::Output { fd: 1, target }
+//     },
+//     RedirectAppend <target:RedirectionTarget> => {
+//         Redirection::Append { fd: 1, target }
+//     },
+//     RedirectIn <target:RedirectionTarget> => {
+//         Redirection::Input { fd: 0, target }
+//     },
+//     RedirectHereDoc <target:RedirectionTarget> => {
+//         Redirection::HereDoc { fd: 0, target }
+//     },
+//     RedirectInOut <target:RedirectionTarget> => {
+//         Redirection::InOut { fd: 0, target }
+//     },
+//     <fd:FD_REDIRECT_OUT> <target:RedirectionTarget> => {
+//         Redirection::Output { fd, target }
+//     },
+//     <fd:FD_REDIRECT_APPEND> <target:RedirectionTarget> => {
+//         Redirection::Append { fd, target }
+//     },
+//     <fd:FD_REDIRECT_IN> <target:RedirectionTarget> => {
+//         Redirection::Input { fd, target }
+//     },
+//     <fd:FD_REDIRECT_HEREDOC> <target:RedirectionTarget> => {
+//         Redirection::HereDoc { fd, target }
+//     },
+// };
+
+// RedirectionTarget: RedirectionTarget = {
+//     WORD => RedirectionTarget::File(<>),
+//     PYOBJECT => RedirectionTarget::PyObject(<>),
+// };
+
+// // Command arguments
+// Argument: Argument = {
+//     WORD => Argument::Word(<>),
+//     PYOBJECT => Argument::PyObject(<>),
+// };
+
+// extern {
+//     type Location = ();
+//     enum Token {
+//         PYOBJECT => Token::PyAny(<Arc<pyo3::Py<pyo3::PyAny>>>),
+//         WORD => Token::Word(<ArcStr>),
+//         Pipe => Token::Pipe,      // |
+//         And => Token::And,       // &&
+//         Or => Token::Or,        // ||
+//         Semicolon => Token::Semicolon, // ;
+//         Ampersand => Token::Ampersand, // &
+//         RedirectOut => Token::RedirectOut,     // >
+//         RedirectIn => Token::RedirectIn,      // <
+//         RedirectAppend => Token::RedirectAppend,  // >>
+//         RedirectHereDoc => Token::RedirectHereDoc, // <<
+//         RedirectInOut => Token::RedirectInOut,   // <>
+//         FD_REDIRECT_OUT => Token::FdRedirectOut(<u32>),     // n>
+//         FD_REDIRECT_IN => Token::FdRedirectIn(<u32>),      // n<
+//         FD_REDIRECT_APPEND => Token::FdRedirectAppend(<u32>),  // n>>
+//         FD_REDIRECT_HEREDOC => Token::FdRedirectHereDoc(<u32>), // n<<
+//         LeftParen => Token::LeftParen,  // (
+//         RightParen => Token::RightParen, // )
+//         LeftBrace => Token::LeftBrace,  // {
+//         RightBrace => Token::RightBrace, // }
+//         Newline => Token::Newline,
+//     }
+// }
+
+// use lalrpop_util::lalrpop_mod;
+
+// lalrpop_mod!(
+//     #[allow(clippy::all)]
+//     #[allow(unused)]
+//     pub grammar,
+//     "/grammar.rs"
+// );

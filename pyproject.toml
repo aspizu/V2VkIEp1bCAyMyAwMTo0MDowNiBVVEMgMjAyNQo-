@@ -1,0 +1,52 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "shl"
+requires-python = ">=3.14b4"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+[project.optional-dependencies]
+tests = [
+    "pytest",
+]
+[tool.maturin]
+python-source = "python"
+features = ["pyo3/extension-module"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.24.0",
+    "rich>=14.0.0",
+]
+
+[tool.basedpyright]
+reportUnnecessaryTypeIgnoreComment = true
+reportUnknownVariableType = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportMissingModuleSource = false
+reportMissingTypeStubs = false
+reportWildcardImportFromLibrary = false
+reportPrivateUsage = false
+reportPrivateImportUsage = false
+reportAny = false
+reportExplicitAny = false
+reportUnusedCallResult = false
+reportImportCycles = false
+reportImplicitStringConcatenation = false
+
+[tool.ruff.lint]
+select = ["ALL"]
+extend-safe-fixes = ["ALL"]
+unfixable = ["F841"]
+ignore = ["D", "COM", "FBT", "S101", "F405"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
