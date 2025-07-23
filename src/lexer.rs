@@ -17,7 +17,7 @@ enum SubShellKind {
     Dollar,
 }
 
-struct Lexer<'a, 'b> {
+pub struct Lexer<'a, 'b> {
     chars: &'a [u8],
     j: usize,
     word_start: usize,
@@ -45,6 +45,20 @@ struct InputChar {
 }
 
 impl<'a, 'b> Lexer<'a, 'b> {
+    pub fn new(chars: &'a [u8], tokens: &'b mut Vec<Token>) -> Self {
+        Self {
+            chars,
+            j: 0,
+            word_start: 0,
+            state: State::Normal,
+            tokens,
+            prev: None,
+            current: None,
+            delimit_quote: false,
+            in_subshell: None,
+        }
+    }
+
     pub fn lex(&mut self) {
         'l: loop {
             let Some(input) = self.eat() else {
@@ -545,6 +559,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             }
         {
             self.tokens.push(Token::Delimit);
+            self.delimit_quote = false;
         }
         self.word_start = self.j;
     }

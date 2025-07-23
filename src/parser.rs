@@ -58,13 +58,21 @@ struct ParsedRedirect {
     flags: ast::RedirectFlags,
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
     inside_subshell: Option<SubShellKind>,
 }
 
 impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a [Token]) -> Self {
+        Self {
+            tokens,
+            current: 0,
+            inside_subshell: None,
+        }
+    }
+
     fn make_subparser(&mut self, kind: SubShellKind) -> Self {
         Self {
             tokens: self.tokens,
@@ -81,7 +89,7 @@ impl<'a> Parser<'a> {
         };
     }
 
-    fn parse(&mut self) -> ast::Script {
+    pub fn parse(&mut self) -> ast::Script {
         let mut stmts: Vec<ast::Stmt> = vec![];
         if self.tokens.is_empty() || self.tokens.len() == 1 && matches!(self.tokens[0], Token::Eof)
         {
@@ -332,10 +340,10 @@ impl<'a> Parser<'a> {
             }
         }
 
-        while if self.inside_subshell.is_none() {
-            !self.check_any(&[&Token::Semicolon, &Token::Newline, &Token::Eof])
+        if if self.inside_subshell.is_none() {
+            self.check_any(&[&Token::Semicolon, &Token::Newline, &Token::Eof])
         } else {
-            !self.check_any(&[
+            self.check_any(&[
                 &Token::Semicolon,
                 &Token::Newline,
                 &Token::Eof,
@@ -374,7 +382,7 @@ impl<'a> Parser<'a> {
 
     fn parse_assign(&mut self) -> Option<ast::Assign> {
         let old = self.current;
-        if let Token::Text(txt) = self.peek() {
+        if let Token::Text(txt) = self.peek().clone() {
             let start_idx = self.current;
             self.expect_text();
             let var_decl: Option<ast::Assign> = 'var_decl: {
@@ -414,7 +422,7 @@ impl<'a> Parser<'a> {
                     let merged = ast::Atom::merge(left, right);
                     break 'var_decl Some(ast::Assign {
                         label: label.into(),
-                        value: merged,
+                        value: ast::Atom::CompoundAtom(merged),
                     });
                 }
                 break 'var_decl None;
@@ -436,8 +444,179 @@ impl<'a> Parser<'a> {
         self.advance();
     }
 
+    fn expect_var(&mut self) {
+        if !matches!(self.peek(), Token::Var(_)) {
+            panic!("Expected var token")
+        }
+        self.advance();
+    }
+
+    fn expect_varargv(&mut self) {
+        if !matches!(self.peek(), Token::VarArgv(_)) {
+            panic!("Expected varargv token")
+        }
+        self.advance();
+    }
+
     fn parse_atom(&mut self) -> Option<ast::Atom> {
-        todo!()
+        let mut has_brace_open = false;
+        let mut has_brace_close = false;
+        let mut has_comma = false;
+        let mut has_glob_syntax = false;
+        let mut atoms = vec![];
+
+        {
+            while match self.peek() {
+                Token::Delimit => {
+                    self.expect(&Token::Delimit);
+                    false
+                }
+                Token::Eof | Token::Semicolon | Token::Newline => false,
+                t => {
+                    if self
+                        .inside_subshell
+                        .is_some_and(|kind| Into::<Token>::into(kind) == *t)
+                    {
+                        false
+                    } else {
+                        true
+                    }
+                }
+            } {
+                let next = self.peek_n(1);
+                let next_delimits = self.delimits(next);
+                let peeked = self.peek().clone();
+                let should_break = next_delimits;
+                let peeked_is_text = matches!(peeked, Token::Text(_));
+                match peeked {
+                    Token::Asterisk => {
+                        has_glob_syntax = true;
+                        self.expect(&Token::Asterisk);
+                        atoms.push(ast::SimpleAtom::Asterisk);
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            break;
+                        }
+                    }
+                    Token::DoubleAsterisk => {
+                        has_glob_syntax = true;
+                        self.expect(&Token::DoubleAsterisk);
+                        atoms.push(ast::SimpleAtom::DoubleAsterisk);
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            break;
+                        }
+                    }
+                    Token::BraceBegin => {
+                        has_brace_open = true;
+                        self.expect(&Token::BraceBegin);
+                        atoms.push(ast::SimpleAtom::BraceBegin);
+                        // TODO in this case we know it can't possibly be the beginning
+                        // of a brace expansion so maybe its faster to just change it to
+                        // text here.
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            if should_break {
+                                break;
+                            }
+                        }
+                    }
+                    Token::BraceEnd => {
+                        has_brace_close = true;
+                        self.expect(&Token::BraceEnd);
+                        atoms.push(ast::SimpleAtom::BraceEnd);
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            break;
+                        }
+                    }
+                    Token::Comma => {
+                        has_comma = true;
+                        self.expect(&Token::Comma);
+                        atoms.push(ast::SimpleAtom::Comma);
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            if should_break {
+                                break;
+                            }
+                        }
+                    }
+                    Token::CmdSubstBegin => {
+                        self.expect(&Token::CmdSubstBegin);
+                        let is_quoted = self.matches(&Token::CmdSubstQuoted);
+                        let mut subparser = self.make_subparser(SubShellKind::CmdSubst);
+                        let script = subparser.parse();
+                        atoms.push(ast::SimpleAtom::CmdSubst {
+                            script,
+                            quoted: is_quoted,
+                        });
+                        self.continue_from_subparser(subparser);
+                        if self.delimits(self.peek()) {
+                            self.matches(&Token::Delimit);
+                            break;
+                        }
+                    }
+                    Token::SingleQuotedText(text)
+                    | Token::DoubleQuotedText(text)
+                    | Token::Text(text) => {
+                        self.advance();
+                        if peeked_is_text && text.len() > 0 && text.chars().next() == Some('~') {
+                            let text = &text[1..];
+                            atoms.push(ast::SimpleAtom::Tilde);
+                            if !text.is_empty() {
+                                atoms.push(ast::SimpleAtom::Text(text.into()));
+                            }
+                        } else {
+                            atoms.push(ast::SimpleAtom::Text(text.clone()));
+                        }
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            if should_break {
+                                break;
+                            }
+                        }
+                    }
+                    Token::Var(text) => {
+                        self.expect_var();
+                        atoms.push(ast::SimpleAtom::Var(text.clone()));
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            if should_break {
+                                break;
+                            }
+                        }
+                    }
+                    Token::VarArgv(int) => {
+                        self.expect_varargv();
+                        atoms.push(ast::SimpleAtom::VarArgv(int.clone()));
+                        if next_delimits {
+                            self.matches(&Token::Delimit);
+                            if should_break {
+                                break;
+                            }
+                        }
+                    }
+                    Token::OpenParen | Token::CloseParen => {
+                        panic!("Unexpected parenthesis in atom parsing");
+                    }
+                    _ => return None,
+                }
+            }
+        }
+
+        return match atoms.len() {
+            0 => None,
+            1 => Some(ast::Atom::Simple(atoms.pop().unwrap())),
+            _ => {
+                let brace_expansion_hint = has_brace_open && has_brace_close && has_comma;
+                let glob_hint = has_glob_syntax;
+                Some(ast::Atom::CompoundAtom(ast::CompoundAtom {
+                    atoms,
+                    brace_expansion_hint,
+                    glob_hint,
+                }))
+            }
+        };
     }
 
     fn parse_redirect(&mut self) -> ParsedRedirect {

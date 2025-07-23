@@ -5,27 +5,26 @@ mod parser;
 mod templatelib;
 mod tokens;
 
-// use pyo3::prelude::*;
+use pyo3::prelude::*;
 
-// #[pyfunction]
-// fn _execute_command<'py>(
-//     py: Python<'py>,
-//     command: Bound<'py, PyAny>,
-// ) -> PyResult<Bound<'py, PyAny>> {
-//     let tokens = lex(py, command)?;
-//     let fut = async move {
-//         let mut parser = ShellParser::new(tokens);
-//         let ast = parser
-//             .parse()
-//             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-//         interpreter::interpret(ast.clone()).await;
-//         Ok(format!("{}", ast))
-//     };
-//     pyo3_async_runtimes::async_std::future_into_py(py, fut)
-// }
+use crate::{lexer::Lexer, parser::Parser};
 
-// #[pymodule]
-// fn shl(m: &Bound<PyModule>) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(_execute_command, m)?)?;
-//     Ok(())
-// }
+#[pyfunction]
+fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let command = command.extract::<String>()?;
+    let bytes = command.as_bytes();
+    let mut tokens = vec![];
+    let mut lexer = Lexer::new(bytes, &mut tokens);
+    lexer.lex();
+    let mut parser = Parser::new(&tokens);
+    let script = parser.parse();
+    let dbg = format!("{:?}", script);
+    let result = dbg.into_pyobject(py)?;
+    Ok(result.into_any())
+}
+
+#[pymodule]
+fn shl(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(_parse_command, m)?)?;
+    Ok(())
+}

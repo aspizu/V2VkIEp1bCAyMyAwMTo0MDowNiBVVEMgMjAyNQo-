@@ -62,7 +62,7 @@ impl std::fmt::Display for Token {
             Token::Text(arc_str) => write!(f, "{arc_str}"),
             Token::SingleQuotedText(arc_str) => write!(f, "{arc_str}"),
             Token::DoubleQuotedText(arc_str) => write!(f, "{arc_str}"),
-            Token::PyObject => write!(f, "PyObject"),
+            Token::PyObject(_) => write!(f, "PyObject"),
             Token::DoubleBracketOpen => write!(f, "[["),
             Token::DoubleBracketClose => write!(f, "]]"),
             Token::Delimit => write!(f, "DELMIT"),

@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-from io import BytesIO
-
 import shl
-from rich import print
+from rich import print  # noqa: A004
 
-
-async def main() -> None:
-    file = BytesIO()
-    cmd = t"ls -la"
-    print(await shl._execute_command(cmd))  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-    print(file.read())
-
-
-asyncio.run(main())
+command = 'echo    "hello world"'
+result: str = shl._parse_command(command)  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+print(result)
