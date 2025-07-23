@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import shl
-from rich import print  # noqa: A004
+from rich import print
 
-command = 'echo "$(echo subshellstr) " '
-result: str = shl._lex_command(command)  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+result = shl._execute_command(t"echo {'Hello, World!'}")  # pyright: ignore[reportAttributeAccessIssue]
 print(result)

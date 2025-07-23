@@ -46,7 +46,7 @@ reportImplicitStringConcatenation = false
 select = ["ALL"]
 extend-safe-fixes = ["ALL"]
 unfixable = ["F841"]
-ignore = ["D", "COM", "FBT", "S101", "F405"]
+ignore = ["D", "COM", "FBT", "S101", "F405", "A004", "SLF001"]
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]

@@ -7,7 +7,12 @@ mod tokens;
 
 use pyo3::prelude::*;
 
-use crate::{lexer::Lexer, parser::Parser, tokens::stringify_tokens};
+use crate::{
+    interpreter::Interpreter,
+    lexer::{Lexer, PLACEHOLDER},
+    parser::Parser,
+    tokens::stringify_tokens,
+};
 
 #[pyfunction]
 fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -15,8 +20,8 @@ fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bo
     let bytes = command.as_bytes();
     let mut tokens = vec![];
     let mut arena = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena);
-    lexer.lex();
+    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena, &[]);
+    lexer.lex()?;
     let dbg = stringify_tokens(&tokens, &arena);
     let result = dbg.into_pyobject(py)?;
     Ok(result.into_any())
@@ -28,8 +33,8 @@ fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<
     let bytes = command.as_bytes();
     let mut tokens = vec![];
     let mut arena = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena);
-    lexer.lex();
+    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena, &[]);
+    lexer.lex()?;
     let mut parser = Parser::new(&tokens, &arena);
     let script = parser.parse();
     let dbg = format!("{:?}", script);
@@ -37,9 +42,41 @@ fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<
     Ok(result.into_any())
 }
 
+#[pyfunction]
+fn _execute_command<'py>(
+    py: Python<'py>,
+    command: Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut pyobjects = vec![];
+    let mut bytes = vec![];
+    for part in command.try_iter()? {
+        let part = part?;
+        if let Some(text) = part.extract::<&str>().ok() {
+            bytes.extend_from_slice(text.as_bytes());
+        } else {
+            let value = part.getattr("value")?;
+            pyobjects.push(value);
+            bytes.push(PLACEHOLDER);
+        }
+    }
+    let mut tokens = vec![];
+    let mut arena = vec![];
+    let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);
+    lexer.lex()?;
+    let mut parser = Parser::new(&tokens, &arena);
+    let script = parser.parse();
+    let mut interpreter = Interpreter::new();
+    pyo3_async_runtimes::async_std::future_into_py(py, async move {
+        interpreter.run_script(&script).await;
+        let dbg = format!("{:?}", script);
+        Python::with_gil(|py| Ok(dbg.into_pyobject(py)?.into_any().unbind()))
+    })
+}
+
 #[pymodule]
 fn shl(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_lex_command, m)?)?;
     m.add_function(wrap_pyfunction!(_parse_command, m)?)?;
+    m.add_function(wrap_pyfunction!(_execute_command, m)?)?;
     Ok(())
 }

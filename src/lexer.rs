@@ -1,7 +1,9 @@
+use pyo3::{types::PyAnyMethods, PyAny, PyResult};
+
 use crate::{ast::RedirectFlags, tokens::Token};
 use std::{ops::Range, str};
 
-const PLACEHOLDER: u8 = 8;
+pub const PLACEHOLDER: u8 = 8;
 
 #[derive(Copy, Clone)]
 enum State {
@@ -17,7 +19,7 @@ enum SubShellKind {
     Dollar,
 }
 
-pub struct Lexer<'a, 'b, 'c> {
+pub struct Lexer<'a, 'b, 'c, 'py> {
     chars: &'a [u8],
     arena: &'c mut Vec<u8>,
     i: usize,
@@ -29,6 +31,8 @@ pub struct Lexer<'a, 'b, 'c> {
     current: Option<InputChar>,
     delimit_quote: bool,
     in_subshell: Option<SubShellKind>,
+    pyobjects: &'py [pyo3::Bound<'py, pyo3::PyAny>],
+    obj: usize,
 }
 
 struct BacktrackSnapshot {
@@ -47,8 +51,13 @@ struct InputChar {
     escaped: bool,
 }
 
-impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
-    pub fn new(chars: &'a [u8], tokens: &'b mut Vec<Token>, arena: &'c mut Vec<u8>) -> Self {
+impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
+    pub fn new(
+        chars: &'a [u8],
+        tokens: &'b mut Vec<Token>,
+        arena: &'c mut Vec<u8>,
+        pyobjects: &'py [pyo3::Bound<'py, pyo3::PyAny>],
+    ) -> Self {
         Self {
             chars,
             arena,
@@ -61,10 +70,12 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
             current: None,
             delimit_quote: false,
             in_subshell: None,
+            pyobjects,
+            obj: 0,
         }
     }
 
-    pub fn lex(&mut self) {
+    pub fn lex(&mut self) -> PyResult<()> {
         'l: loop {
             let Some(input) = self.eat() else {
                 self.break_word(true);
@@ -75,7 +86,20 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
             // Special token to denote substituted JS variables
             // we use 8 or \b which is a non printable char
             if char == PLACEHOLDER {
-                todo!()
+                let pyobject = &self.pyobjects[self.obj];
+                if let Some(text) = pyobject.extract::<&str>().ok() {
+                    self.break_word(false);
+                    let start = self.j;
+                    for c in text.as_bytes() {
+                        self.append_char_to_str_pool(*c);
+                    }
+                    self.tokens.push(Token::Text(start..self.j));
+                } else {
+                    self.break_word(false);
+                    self.tokens.push(Token::PyObject(self.obj));
+                }
+                self.obj += 1;
+                continue 'l;
             }
             // Handle non-escaped chars:
             // 1. special syntax (operators, etc.)
@@ -230,10 +254,10 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
                                     if !matches!(last, Token::Delimit) {
                                         self.tokens.push(Token::Delimit);
                                     }
-                                    return;
+                                    return Ok(());
                                 }
                             } else {
-                                self.eat_subshell(SubShellKind::Backtick);
+                                self.eat_subshell(SubShellKind::Backtick)?;
                             }
                         }
                         b'$' => {
@@ -246,7 +270,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
                             });
                             if !peeked.escaped && peeked.char == b'(' {
                                 self.break_word(false);
-                                self.eat_subshell(SubShellKind::Dollar);
+                                self.eat_subshell(SubShellKind::Dollar)?;
                                 continue 'l;
                             }
                             self.break_word(false);
@@ -276,7 +300,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
                                 break 'escaped;
                             };
                             self.break_word(true);
-                            self.eat_subshell(SubShellKind::Normal);
+                            self.eat_subshell(SubShellKind::Normal)?;
                             continue 'l;
                         }
                         b')' => {
@@ -309,7 +333,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
                             } else if matches!(self.in_subshell, Some(SubShellKind::Normal)) {
                                 self.tokens.push(Token::CloseParen);
                             }
-                            return;
+                            return Ok(());
                         }
                         b'0'..=b'9' => {
                             if matches!(self.state, State::Normal) {
@@ -447,6 +471,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
             }
         }
         self.tokens.push(Token::Eof);
+        Ok(())
     }
 
     fn append_char_to_str_pool(&mut self, c: u8) {
@@ -481,7 +506,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
         self.state = snap.state;
         self.prev = snap.prev;
         self.current = snap.current;
-        self.i = self.i;
+        self.i = snap.i;
         self.j = snap.j;
         self.word_start = snap.word_start;
         self.delimit_quote = snap.delimit_quote;
@@ -710,7 +735,7 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
                     .is_some_and(|prev| prev.escaped && prev.char == b'"')))
     }
 
-    fn eat_subshell(&mut self, kind: SubShellKind) {
+    fn eat_subshell(&mut self, kind: SubShellKind) -> PyResult<()> {
         if let SubShellKind::Dollar = kind {
             self.eat();
         }
@@ -725,13 +750,14 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
         }
         let prev_quote_state = self.state;
         let mut sublexer = self.make_sublexer(kind);
-        sublexer.lex();
+        sublexer.lex()?;
         let i = sublexer.i;
         let j = sublexer.j;
         let word_start = sublexer.word_start;
         let prev = sublexer.prev;
         let current = sublexer.current;
         let delimit_quote = sublexer.delimit_quote;
+        let obj = sublexer.obj;
         drop(sublexer);
         self.i = i;
         self.j = j;
@@ -740,6 +766,8 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
         self.current = current;
         self.delimit_quote = delimit_quote;
         self.state = prev_quote_state;
+        self.obj = obj;
+        Ok(())
     }
 
     fn make_sublexer(&mut self, kind: SubShellKind) -> Lexer {
@@ -755,6 +783,8 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
             current: self.current,
             delimit_quote: self.delimit_quote,
             in_subshell: Some(kind),
+            pyobjects: self.pyobjects,
+            obj: self.obj,
         };
         sublexer
     }

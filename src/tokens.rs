@@ -28,7 +28,7 @@ pub enum Token {
     Text(Range<usize>),
     SingleQuotedText(Range<usize>),
     DoubleQuotedText(Range<usize>),
-    PyObject(()),
+    PyObject(usize),
     DoubleBracketOpen,
     DoubleBracketClose,
     Delimit,
