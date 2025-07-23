@@ -17,8 +17,10 @@ enum SubShellKind {
     Dollar,
 }
 
-pub struct Lexer<'a, 'b> {
+pub struct Lexer<'a, 'b, 'c> {
     chars: &'a [u8],
+    arena: &'c mut Vec<u8>,
+    i: usize,
     j: usize,
     word_start: usize,
     state: State,
@@ -33,6 +35,7 @@ struct BacktrackSnapshot {
     state: State,
     prev: Option<InputChar>,
     current: Option<InputChar>,
+    i: usize,
     j: usize,
     word_start: usize,
     delimit_quote: bool,
@@ -44,10 +47,12 @@ struct InputChar {
     escaped: bool,
 }
 
-impl<'a, 'b> Lexer<'a, 'b> {
-    pub fn new(chars: &'a [u8], tokens: &'b mut Vec<Token>) -> Self {
+impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
+    pub fn new(chars: &'a [u8], tokens: &'b mut Vec<Token>, arena: &'c mut Vec<u8>) -> Self {
         Self {
             chars,
+            arena,
+            i: 0,
             j: 0,
             word_start: 0,
             state: State::Normal,
@@ -248,7 +253,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                             let var_tok = self.eat_var();
                             match var_tok.len() {
                                 0 => {
-                                    self.append_char_to_str_pool();
+                                    self.append_char_to_str_pool(b'$');
                                     self.break_word(false);
                                 }
                                 1 => {
@@ -256,15 +261,11 @@ impl<'a, 'b> Lexer<'a, 'b> {
                                     if c.is_ascii_digit() {
                                         self.tokens.push(Token::VarArgv(c - b'0'));
                                     } else {
-                                        self.tokens.push(Token::Var(
-                                            str::from_utf8(&self.chars[var_tok]).unwrap().into(),
-                                        ));
+                                        self.tokens.push(Token::Var(var_tok));
                                     }
                                 }
                                 _ => {
-                                    self.tokens.push(Token::Var(
-                                        str::from_utf8(&self.chars[var_tok]).unwrap().into(),
-                                    ));
+                                    self.tokens.push(Token::Var(var_tok));
                                 }
                             }
                             self.word_start = self.j;
@@ -433,7 +434,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 continue 'l;
             }
-            self.append_char_to_str_pool();
+            self.append_char_to_str_pool(char);
         }
         if let Some(subshell_kind) = self.in_subshell {
             match subshell_kind {
@@ -448,8 +449,9 @@ impl<'a, 'b> Lexer<'a, 'b> {
         self.tokens.push(Token::Eof);
     }
 
-    fn append_char_to_str_pool(&mut self) {
-        // self.j += 1;
+    fn append_char_to_str_pool(&mut self, c: u8) {
+        self.arena.push(c);
+        self.j += 1;
     }
 
     fn eat_comment(&mut self) {
@@ -468,6 +470,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             state: self.state,
             prev: self.prev,
             current: self.current,
+            i: self.i,
             j: self.j,
             word_start: self.word_start,
             delimit_quote: self.delimit_quote,
@@ -478,13 +481,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
         self.state = snap.state;
         self.prev = snap.prev;
         self.current = snap.current;
+        self.i = self.i;
         self.j = snap.j;
         self.word_start = snap.word_start;
         self.delimit_quote = snap.delimit_quote;
     }
 
     fn peek(&self) -> Option<InputChar> {
-        let mut char = self.chars.get(self.j).cloned()?;
+        let mut char = self.chars.get(self.i).cloned()?;
         if char != b'\\' || matches!(self.state, State::Single) {
             return Some(InputChar {
                 char,
@@ -494,12 +498,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
         match self.state {
             State::Normal => {
-                let peeked = self.chars.get(self.j + 1).cloned()?;
+                let peeked = self.chars.get(self.i + 1).cloned()?;
                 char = peeked;
             }
             State::Single => unreachable!(),
             State::Double => {
-                let peeked = self.chars.get(self.j + 1).cloned()?;
+                let peeked = self.chars.get(self.i + 1).cloned()?;
                 match peeked {
                     b'$' | b'`' | b'"' | b'\\' | b'\n' | b'#' => {
                         char = peeked;
@@ -522,8 +526,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
     fn eat(&mut self) -> Option<InputChar> {
         if let Some(peeked) = self.peek() {
             self.prev = self.current;
+            self.i += 1 + peeked.escaped as usize;
             self.current = Some(peeked);
-            self.j += 1 + peeked.escaped as usize;
             return Some(peeked);
         }
         return None;
@@ -539,13 +543,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
     fn break_word_impl(&mut self, add_delimiter: bool, in_normal_space: bool, in_operator: bool) {
         let start = self.word_start;
-        let end = if in_normal_space { self.j - 1 } else { self.j };
+        let end = self.j;
         if start != end || self.is_immediately_escaped_quote() {
-            let token = str::from_utf8(&self.chars[start..end]).unwrap().into();
             match self.state {
-                State::Normal => self.tokens.push(Token::Text(token)),
-                State::Single => self.tokens.push(Token::SingleQuotedText(token)),
-                State::Double => self.tokens.push(Token::DoubleQuotedText(token)),
+                State::Normal => self.tokens.push(Token::Text(start..end)),
+                State::Single => self.tokens.push(Token::SingleQuotedText(start..end)),
+                State::Double => self.tokens.push(Token::DoubleQuotedText(start..end)),
             }
             if add_delimiter {
                 self.tokens.push(Token::Delimit);
@@ -723,12 +726,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
         let prev_quote_state = self.state;
         let mut sublexer = self.make_sublexer(kind);
         sublexer.lex();
+        let i = sublexer.i;
         let j = sublexer.j;
         let word_start = sublexer.word_start;
         let prev = sublexer.prev;
         let current = sublexer.current;
         let delimit_quote = sublexer.delimit_quote;
         drop(sublexer);
+        self.i = i;
         self.j = j;
         self.word_start = word_start;
         self.prev = prev;
@@ -740,6 +745,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
     fn make_sublexer(&mut self, kind: SubShellKind) -> Lexer {
         let sublexer = Lexer {
             chars: self.chars,
+            arena: self.arena,
+            i: self.i,
             j: self.j,
             word_start: self.word_start,
             state: self.state,
@@ -766,8 +773,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     b'0'..=b'9' => {
                         is_int = true;
                         self.eat();
-                        self.append_char_to_str_pool();
-                        i += 1;
+                        self.append_char_to_str_pool(char);
+                        i += 1; // bug?
                         continue;
                     }
                     b'a'..=b'z' | b'A'..=b'Z' | b'_' => {}
@@ -794,7 +801,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     }
                     if let b'0'..=b'9' | b'a'..=b'z' | b'_' = char {
                         self.eat().unwrap();
-                        self.append_char_to_str_pool();
+                        self.append_char_to_str_pool(char);
                     } else {
                         return start..self.j;
                     }

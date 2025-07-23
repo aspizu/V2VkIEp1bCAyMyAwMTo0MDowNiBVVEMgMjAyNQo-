@@ -24,15 +24,16 @@ enum IfClauseTok {
     Fi,
 }
 
-impl From<&'_ Token> for Option<IfClauseTok> {
-    fn from(token: &'_ Token) -> Self {
+impl IfClauseTok {
+    fn parse(token: &Token, arena: &[u8]) -> Option<Self> {
         if let Token::Text(text) = token {
-            match text.as_str() {
-                "if" => Some(IfClauseTok::If),
-                "else" => Some(IfClauseTok::Else),
-                "elif" => Some(IfClauseTok::Elif),
-                "then" => Some(IfClauseTok::Then),
-                "fi" => Some(IfClauseTok::Fi),
+            let text = str::from_utf8(arena.get(text.clone())?).ok()?;
+            match text {
+                "if" => Some(Self::If),
+                "else" => Some(Self::Else),
+                "elif" => Some(Self::Elif),
+                "then" => Some(Self::Then),
+                "fi" => Some(Self::Fi),
                 _ => None,
             }
         } else {
@@ -62,12 +63,14 @@ pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
     inside_subshell: Option<SubShellKind>,
+    arena: &'a [u8],
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a [Token]) -> Self {
+    pub fn new(tokens: &'a [Token], arena: &'a [u8]) -> Self {
         Self {
             tokens,
+            arena,
             current: 0,
             inside_subshell: None,
         }
@@ -75,6 +78,7 @@ impl<'a> Parser<'a> {
 
     fn make_subparser(&mut self, kind: SubShellKind) -> Self {
         Self {
+            arena: self.arena,
             tokens: self.tokens,
             current: self.current,
             inside_subshell: Some(kind),
@@ -236,17 +240,17 @@ impl<'a> Parser<'a> {
         let cond = self.parse_if_body(&[IfClauseTok::Then]);
         if !self.match_if_clausetok(IfClauseTok::Then) {
             // TODO: Add error handling
-            panic!("Expected \"then\" but got: {}", self.peek());
+            panic!("Expected \"then\" but got: {:?}", self.peek());
         }
         let then = self.parse_if_body(&[IfClauseTok::Else, IfClauseTok::Elif, IfClauseTok::Fi]);
         let mut else_parts: Vec<Vec<ast::Stmt>> = vec![];
 
-        let if_clause_tok: IfClauseTok = match self.peek().into() {
+        let if_clause_tok: IfClauseTok = match IfClauseTok::parse(self.peek(), self.arena) {
             Some(tok) => tok,
             None => {
                 // TODO: add error handling
                 panic!(
-                    "Expected \"else\", \"elif\", or \"fi\" but got: {}",
+                    "Expected \"else\", \"elif\", or \"fi\" but got: {:?}",
                     self.peek()
                 );
             }
@@ -256,7 +260,7 @@ impl<'a> Parser<'a> {
             IfClauseTok::If | IfClauseTok::Then => {
                 // TODO: add error handling
                 panic!(
-                    "Expected \"else\", \"elif\", or \"fi\" but got: {}",
+                    "Expected \"else\", \"elif\", or \"fi\" but got: {:?}",
                     self.peek()
                 );
             }
@@ -264,7 +268,7 @@ impl<'a> Parser<'a> {
                 self.expect_if_clause_text_token("else");
                 let else_part = self.parse_if_body(&[IfClauseTok::Fi]);
                 if !self.match_if_clausetok(IfClauseTok::Fi) {
-                    panic!("Expected \"fi\" but got: {}", self.peek());
+                    panic!("Expected \"fi\" but got: {:?}", self.peek());
                 }
                 else_parts.push(else_part);
                 return ast::If {
@@ -279,7 +283,7 @@ impl<'a> Parser<'a> {
                     let elif_cond = self.parse_if_body(&[IfClauseTok::Then]);
                     if !self.match_if_clausetok(IfClauseTok::Then) {
                         // TODO: add error handling
-                        panic!("Expected \"then\" but got: {}", self.peek());
+                        panic!("Expected \"then\" but got: {:?}", self.peek());
                     }
                     let then_part = self.parse_if_body(&[
                         IfClauseTok::Elif,
@@ -289,7 +293,7 @@ impl<'a> Parser<'a> {
                     else_parts.push(elif_cond);
                     else_parts.push(then_part);
 
-                    match &self.peek().into() {
+                    match IfClauseTok::parse(self.peek(), self.arena) {
                         Some(IfClauseTok::Elif) => continue,
                         Some(IfClauseTok::Else) => {
                             self.expect_if_clause_text_token("else");
@@ -301,7 +305,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 if !self.match_if_clausetok(IfClauseTok::Fi) {
-                    panic!("Expected \"fi\" but got: {}", self.peek());
+                    panic!("Expected \"fi\" but got: {:?}", self.peek());
                 }
                 return ast::If {
                     cond,
@@ -383,6 +387,7 @@ impl<'a> Parser<'a> {
     fn parse_assign(&mut self) -> Option<ast::Assign> {
         let old = self.current;
         if let Token::Text(txt) = self.peek().clone() {
+            let txt = str::from_utf8(&self.arena[txt.clone()]).unwrap();
             let start_idx = self.current;
             self.expect_text();
             let var_decl: Option<ast::Assign> = 'var_decl: {
@@ -560,6 +565,7 @@ impl<'a> Parser<'a> {
                     | Token::DoubleQuotedText(text)
                     | Token::Text(text) => {
                         self.advance();
+                        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
                         if peeked_is_text && text.len() > 0 && text.chars().next() == Some('~') {
                             let text = &text[1..];
                             atoms.push(ast::SimpleAtom::Tilde);
@@ -567,7 +573,7 @@ impl<'a> Parser<'a> {
                                 atoms.push(ast::SimpleAtom::Text(text.into()));
                             }
                         } else {
-                            atoms.push(ast::SimpleAtom::Text(text.clone()));
+                            atoms.push(ast::SimpleAtom::Text(text.into()));
                         }
                         if next_delimits {
                             self.matches(&Token::Delimit);
@@ -577,8 +583,9 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Token::Var(text) => {
+                        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
                         self.expect_var();
-                        atoms.push(ast::SimpleAtom::Var(text.clone()));
+                        atoms.push(ast::SimpleAtom::Var(text.into()));
                         if next_delimits {
                             self.matches(&Token::Delimit);
                             if should_break {
@@ -657,7 +664,8 @@ impl<'a> Parser<'a> {
             return false;
         };
         let stok: &str = (&token).into();
-        if self.delimits(self.peek_n(1)) && text.as_str() == stok {
+        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
+        if self.delimits(self.peek_n(1)) && text == stok {
             self.advance();
             self.expect_delimit();
             return true;
@@ -672,7 +680,8 @@ impl<'a> Parser<'a> {
         };
         for token in tokens {
             let stok: &str = token.into();
-            if text.as_str() == stok {
+            let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
+            if text == stok {
                 return true;
             }
         }
@@ -684,6 +693,7 @@ impl<'a> Parser<'a> {
             let d = self.delimits(self.peek_n(1));
             let mut x = false;
             let mut tok = Token::Eof;
+            let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
             if d && text == if_clause_token {
                 tok = self.advance().clone();
                 x = true;
@@ -700,6 +710,7 @@ impl<'a> Parser<'a> {
         let Token::Text(text) = self.peek() else {
             return false;
         };
+        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
         text == if_clause_token
     }
 

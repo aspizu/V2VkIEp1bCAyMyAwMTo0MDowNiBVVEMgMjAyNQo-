@@ -7,16 +7,17 @@ mod tokens;
 
 use pyo3::prelude::*;
 
-use crate::{lexer::Lexer, parser::Parser};
+use crate::{lexer::Lexer, parser::Parser, tokens::stringify_tokens};
 
 #[pyfunction]
 fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let command = command.extract::<String>()?;
     let bytes = command.as_bytes();
     let mut tokens = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens);
+    let mut arena = vec![];
+    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena);
     lexer.lex();
-    let dbg = format!("{:?}", tokens);
+    let dbg = stringify_tokens(&tokens, &arena);
     let result = dbg.into_pyobject(py)?;
     Ok(result.into_any())
 }
@@ -26,9 +27,10 @@ fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<
     let command = command.extract::<String>()?;
     let bytes = command.as_bytes();
     let mut tokens = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens);
+    let mut arena = vec![];
+    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena);
     lexer.lex();
-    let mut parser = Parser::new(&tokens);
+    let mut parser = Parser::new(&tokens, &arena);
     let script = parser.parse();
     let dbg = format!("{:?}", script);
     let result = dbg.into_pyobject(py)?;
