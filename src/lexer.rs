@@ -248,6 +248,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                             let var_tok = self.eat_var();
                             match var_tok.len() {
                                 0 => {
+                                    self.append_char_to_str_pool();
                                     self.break_word(false);
                                 }
                                 1 => {
@@ -432,6 +433,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 continue 'l;
             }
+            self.append_char_to_str_pool();
         }
         if let Some(subshell_kind) = self.in_subshell {
             match subshell_kind {
@@ -444,6 +446,10 @@ impl<'a, 'b> Lexer<'a, 'b> {
             }
         }
         self.tokens.push(Token::Eof);
+    }
+
+    fn append_char_to_str_pool(&mut self) {
+        // self.j += 1;
     }
 
     fn eat_comment(&mut self) {
@@ -760,6 +766,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     b'0'..=b'9' => {
                         is_int = true;
                         self.eat();
+                        self.append_char_to_str_pool();
                         i += 1;
                         continue;
                     }
@@ -787,6 +794,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     }
                     if let b'0'..=b'9' | b'a'..=b'z' | b'_' = char {
                         self.eat().unwrap();
+                        self.append_char_to_str_pool();
                     } else {
                         return start..self.j;
                     }
