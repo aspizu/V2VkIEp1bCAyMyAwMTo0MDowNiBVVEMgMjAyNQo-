@@ -749,14 +749,13 @@ impl<'a, 'b, 'c> Lexer<'a, 'b, 'c> {
             i: self.i,
             j: self.j,
             word_start: self.word_start,
-            state: self.state,
+            state: State::Normal,
             tokens: self.tokens,
             prev: self.prev,
             current: self.current,
             delimit_quote: self.delimit_quote,
             in_subshell: Some(kind),
         };
-        self.state = State::Normal;
         sublexer
     }
 
