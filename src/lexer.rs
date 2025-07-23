@@ -539,7 +539,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
     fn break_word_impl(&mut self, add_delimiter: bool, in_normal_space: bool, in_operator: bool) {
         let start = self.word_start;
-        let end = self.j;
+        let end = if in_normal_space { self.j - 1 } else { self.j };
         if start != end || self.is_immediately_escaped_quote() {
             let token = str::from_utf8(&self.chars[start..end]).unwrap().into();
             match self.state {
