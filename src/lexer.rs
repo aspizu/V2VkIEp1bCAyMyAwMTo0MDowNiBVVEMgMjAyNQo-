@@ -432,14 +432,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 continue 'l;
             }
-            if let Some(subshell_kind) = self.in_subshell {
-                match subshell_kind {
-                    SubShellKind::Dollar | SubShellKind::Backtick => {
-                        panic!("Unclosed command substitution")
-                    }
-                    SubShellKind::Normal => {
-                        panic!("Unclosed subshell")
-                    }
+        }
+        if let Some(subshell_kind) = self.in_subshell {
+            match subshell_kind {
+                SubShellKind::Dollar | SubShellKind::Backtick => {
+                    panic!("Unclosed command substitution")
+                }
+                SubShellKind::Normal => {
+                    panic!("Unclosed subshell")
                 }
             }
         }
@@ -545,6 +545,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 self.tokens.push(Token::Delimit);
             }
         } else if (in_normal_space || in_operator)
+            && self.tokens.len() > 0
             && match self.tokens.last() {
                 Some(
                     Token::Var(_)
