@@ -152,6 +152,9 @@ impl<'a, 'b> Lexer<'a, 'b> {
                             } else {
                                 true
                             };
+                            if !whitespace_preceding {
+                                break 'escaped;
+                            };
                             self.break_word(true);
                             self.eat_comment();
                             continue 'l;
@@ -485,12 +488,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
         match self.state {
             State::Normal => {
-                let peeked = self.chars.get(self.j).cloned()?;
+                let peeked = self.chars.get(self.j + 1).cloned()?;
                 char = peeked;
             }
             State::Single => unreachable!(),
             State::Double => {
-                let peeked = self.chars.get(self.j).cloned()?;
+                let peeked = self.chars.get(self.j + 1).cloned()?;
                 match peeked {
                     b'$' | b'`' | b'"' | b'\\' | b'\n' | b'#' => {
                         char = peeked;

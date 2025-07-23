@@ -10,6 +10,18 @@ use pyo3::prelude::*;
 use crate::{lexer::Lexer, parser::Parser};
 
 #[pyfunction]
+fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let command = command.extract::<String>()?;
+    let bytes = command.as_bytes();
+    let mut tokens = vec![];
+    let mut lexer = Lexer::new(bytes, &mut tokens);
+    lexer.lex();
+    let dbg = format!("{:?}", tokens);
+    let result = dbg.into_pyobject(py)?;
+    Ok(result.into_any())
+}
+
+#[pyfunction]
 fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let command = command.extract::<String>()?;
     let bytes = command.as_bytes();
@@ -25,6 +37,7 @@ fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<
 
 #[pymodule]
 fn shl(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(_lex_command, m)?)?;
     m.add_function(wrap_pyfunction!(_parse_command, m)?)?;
     Ok(())
 }
