@@ -14,13 +14,28 @@ use crate::{
     tokens::stringify_tokens,
 };
 
+fn split_template<'py>(command: Bound<'py, PyAny>) -> PyResult<(Vec<Bound<'py, PyAny>>, Vec<u8>)> {
+    let mut pyobjects = vec![];
+    let mut bytes = vec![];
+    for part in command.try_iter()? {
+        let part = part?;
+        if let Some(text) = part.extract::<&str>().ok() {
+            bytes.extend_from_slice(text.as_bytes());
+        } else {
+            let value = part.getattr("value")?;
+            pyobjects.push(value);
+            bytes.push(PLACEHOLDER);
+        }
+    }
+    Ok((pyobjects, bytes))
+}
+
 #[pyfunction]
 fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    let command = command.extract::<String>()?;
-    let bytes = command.as_bytes();
+    let (pyobjects, bytes) = split_template(command)?;
     let mut tokens = vec![];
     let mut arena = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena, &[]);
+    let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);
     lexer.lex()?;
     let dbg = stringify_tokens(&tokens, &arena);
     let result = dbg.into_pyobject(py)?;
@@ -29,11 +44,10 @@ fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bo
 
 #[pyfunction]
 fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    let command = command.extract::<String>()?;
-    let bytes = command.as_bytes();
+    let (pyobjects, bytes) = split_template(command)?;
     let mut tokens = vec![];
     let mut arena = vec![];
-    let mut lexer = Lexer::new(bytes, &mut tokens, &mut arena, &[]);
+    let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);
     lexer.lex()?;
     let mut parser = Parser::new(&tokens, &arena);
     let script = parser.parse();
@@ -47,18 +61,7 @@ fn _execute_command<'py>(
     py: Python<'py>,
     command: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let mut pyobjects = vec![];
-    let mut bytes = vec![];
-    for part in command.try_iter()? {
-        let part = part?;
-        if let Some(text) = part.extract::<&str>().ok() {
-            bytes.extend_from_slice(text.as_bytes());
-        } else {
-            let value = part.getattr("value")?;
-            pyobjects.push(value);
-            bytes.push(PLACEHOLDER);
-        }
-    }
+    let (pyobjects, bytes) = split_template(command)?;
     let mut tokens = vec![];
     let mut arena = vec![];
     let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);

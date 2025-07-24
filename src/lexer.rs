@@ -94,6 +94,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                         self.append_char_to_str_pool(*c);
                     }
                     self.tokens.push(Token::Text(start..self.j));
+                    self.word_start = self.j;
                 } else {
                     self.break_word(false);
                     self.tokens.push(Token::PyObject(self.obj));
