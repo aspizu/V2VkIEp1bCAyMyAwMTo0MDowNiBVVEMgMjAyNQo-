@@ -1,4 +1,4 @@
-use pyo3::{types::PyAnyMethods, PyAny, PyResult};
+use pyo3::{types::PyAnyMethods, PyResult};
 
 use crate::{ast::RedirectFlags, tokens::Token};
 use std::{ops::Range, str};
@@ -87,7 +87,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
             // we use 8 or \b which is a non printable char
             if char == PLACEHOLDER {
                 let pyobject = &self.pyobjects[self.obj];
-                if let Some(text) = pyobject.extract::<&str>().ok() {
+                if let Ok(text) = pyobject.extract::<&str>() {
                     self.break_word(false);
                     let start = self.j;
                     for c in text.as_bytes() {
@@ -556,7 +556,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
             self.current = Some(peeked);
             return Some(peeked);
         }
-        return None;
+        None
     }
 
     fn break_word(&mut self, add_delimiter: bool) {
@@ -580,7 +580,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                 self.tokens.push(Token::Delimit);
             }
         } else if (in_normal_space || in_operator)
-            && self.tokens.len() > 0
+            && !self.tokens.is_empty()
             && match self.tokens.last() {
                 Some(
                     Token::Var(_)
@@ -612,12 +612,10 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
             } else {
                 RedirectFlags::rightright()
             }
+        } else if dir_in {
+            RedirectFlags::right()
         } else {
-            if dir_in {
-                RedirectFlags::right()
-            } else {
-                RedirectFlags::left()
-            }
+            RedirectFlags::left()
         }
     }
 
@@ -759,7 +757,6 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
         let current = sublexer.current;
         let delimit_quote = sublexer.delimit_quote;
         let obj = sublexer.obj;
-        drop(sublexer);
         self.i = i;
         self.j = j;
         self.word_start = word_start;
@@ -772,7 +769,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
     }
 
     fn make_sublexer(&mut self, kind: SubShellKind) -> Lexer {
-        let sublexer = Lexer {
+        Lexer {
             chars: self.chars,
             arena: self.arena,
             i: self.i,
@@ -786,8 +783,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
             in_subshell: Some(kind),
             pyobjects: self.pyobjects,
             obj: self.obj,
-        };
-        sublexer
+        }
     }
 
     fn eat_var(&mut self) -> Range<usize> {

@@ -7,7 +7,7 @@ from rich import print
 
 
 async def main() -> None:
-    result = shl._parse_command(t"echo src/*")  # pyright: ignore[reportAttributeAccessIssue]
+    result = await shl._execute_command(t"echo output is $(python -c 'print(input())')")  # pyright: ignore[reportAttributeAccessIssue]
     print(result)
 
 

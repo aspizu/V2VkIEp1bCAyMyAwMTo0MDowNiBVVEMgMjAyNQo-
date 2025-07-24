@@ -1061,6 +1061,7 @@ dependencies = [
  "arcstr",
  "async-process",
  "bumpalo",
+ "futures",
  "lalrpop",
  "lalrpop-util",
  "pyo3",

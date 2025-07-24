@@ -8,7 +8,7 @@ mod tokens;
 use pyo3::prelude::*;
 
 use crate::{
-    interpreter::Interpreter,
+    interpreter::{Interpreter, Stdin, Stdout},
     lexer::{Lexer, PLACEHOLDER},
     parser::Parser,
     tokens::stringify_tokens,
@@ -19,7 +19,7 @@ fn split_template<'py>(command: Bound<'py, PyAny>) -> PyResult<(Vec<Bound<'py, P
     let mut bytes = vec![];
     for part in command.try_iter()? {
         let part = part?;
-        if let Some(text) = part.extract::<&str>().ok() {
+        if let Ok(text) = part.extract::<&str>() {
             bytes.extend_from_slice(text.as_bytes());
         } else {
             let value = part.getattr("value")?;
@@ -70,7 +70,14 @@ fn _execute_command<'py>(
     let script = parser.parse();
     let mut interpreter = Interpreter::new();
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        interpreter.run_script(&script).await?;
+        interpreter
+            .run_script(
+                &script,
+                &mut Stdin::<&[u8]>::Inherit,
+                &mut Stdout::<Vec<u8>>::Inherit,
+                &mut Stdout::<Vec<u8>>::Inherit,
+            )
+            .await?;
         let dbg = format!("{:?}", script);
         Python::with_gil(|py| Ok(dbg.into_pyobject(py)?.into_any().unbind()))
     })

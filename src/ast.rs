@@ -288,12 +288,12 @@ impl Atom {
         let right = right.simple().unwrap();
         let mut atoms = this.atoms.clone();
         atoms.push(right.clone());
-        return CompoundAtom {
+        CompoundAtom {
             atoms,
             brace_expansion_hint: this.brace_expansion_hint
                 || matches!(right, SimpleAtom::BraceBegin | SimpleAtom::BraceEnd),
             glob_hint: this.glob_hint
                 || matches!(right, SimpleAtom::Asterisk | SimpleAtom::DoubleAsterisk),
-        };
+        }
     }
 }

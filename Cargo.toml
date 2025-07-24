@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 arcstr = "1.2.0"
 async-process = "1.7"
 bumpalo = "3.19.0"
+futures = "0.3.31"
 lalrpop-util = "0.22.2"
 pyo3 = "0.25.0"
 pyo3-async-runtimes = { version = "0.25.0", features = ["tokio-runtime"] }

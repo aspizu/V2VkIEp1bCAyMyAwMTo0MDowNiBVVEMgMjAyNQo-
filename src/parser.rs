@@ -6,11 +6,11 @@ enum SubShellKind {
     Normal,
 }
 
-impl Into<Token> for SubShellKind {
-    fn into(self) -> Token {
-        match self {
-            Self::CmdSubst => Token::CmdSubstEnd,
-            Self::Normal => Token::CloseParen,
+impl From<SubShellKind> for Token {
+    fn from(val: SubShellKind) -> Self {
+        match val {
+            SubShellKind::CmdSubst => Token::CmdSubstEnd,
+            SubShellKind::Normal => Token::CloseParen,
         }
     }
 }
@@ -271,11 +271,11 @@ impl<'a> Parser<'a> {
                     panic!("Expected \"fi\" but got: {:?}", self.peek());
                 }
                 else_parts.push(else_part);
-                return ast::If {
+                ast::If {
                     cond,
                     then,
                     else_parts,
-                };
+                }
             }
             IfClauseTok::Elif => {
                 loop {
@@ -307,19 +307,19 @@ impl<'a> Parser<'a> {
                 if !self.match_if_clausetok(IfClauseTok::Fi) {
                     panic!("Expected \"fi\" but got: {:?}", self.peek());
                 }
-                return ast::If {
+                ast::If {
                     cond,
                     then,
                     else_parts,
-                };
+                }
             }
             IfClauseTok::Fi => {
                 self.expect_if_clause_text_token("fi");
-                return ast::If {
+                ast::If {
                     cond,
                     then,
                     else_parts: vec![],
-                };
+                }
             }
         }
     }
@@ -436,7 +436,7 @@ impl<'a> Parser<'a> {
                 return Some(var_decl);
             }
             self.current = start_idx;
-            return None;
+            None
         } else {
             None
         }
@@ -478,14 +478,9 @@ impl<'a> Parser<'a> {
                 }
                 Token::Eof | Token::Semicolon | Token::Newline => false,
                 t => {
-                    if self
+                    !self
                         .inside_subshell
                         .is_some_and(|kind| Into::<Token>::into(kind) == *t)
-                    {
-                        false
-                    } else {
-                        true
-                    }
                 }
             } {
                 let next = self.peek_n(1);
@@ -566,7 +561,7 @@ impl<'a> Parser<'a> {
                     | Token::Text(text) => {
                         self.advance();
                         let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
-                        if peeked_is_text && text.len() > 0 && text.chars().next() == Some('~') {
+                        if peeked_is_text && !text.is_empty() && text.starts_with('~') {
                             let text = &text[1..];
                             atoms.push(ast::SimpleAtom::Tilde);
                             if !text.is_empty() {
@@ -595,7 +590,7 @@ impl<'a> Parser<'a> {
                     }
                     Token::VarArgv(int) => {
                         self.expect_varargv();
-                        atoms.push(ast::SimpleAtom::VarArgv(int.clone()));
+                        atoms.push(ast::SimpleAtom::VarArgv(int));
                         if next_delimits {
                             self.matches(&Token::Delimit);
                             if should_break {
@@ -611,7 +606,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        return match atoms.len() {
+        match atoms.len() {
             0 => None,
             1 => Some(ast::Atom::Simple(atoms.pop().unwrap())),
             _ => {
@@ -623,14 +618,14 @@ impl<'a> Parser<'a> {
                     glob_hint,
                 }))
             }
-        };
+        }
     }
 
     fn parse_redirect(&mut self) -> ParsedRedirect {
         let has_redirect: bool = matches!(self.peek(), Token::Redirect(..));
         let flags: ast::RedirectFlags = if has_redirect {
             if let Token::Redirect(r) = self.advance() {
-                r.clone()
+                *r
             } else {
                 unreachable!()
             }
@@ -733,11 +728,11 @@ impl<'a> Parser<'a> {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     fn check_any(&self, tokens: &[&Token]) -> bool {
-        tokens.into_iter().map(|token| self.check(token)).any(|b| b)
+        tokens.iter().any(|token| self.check(token))
     }
 
     fn check(&self, token: &Token) -> bool {
@@ -745,7 +740,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_any(&self, tokens: &[&Token]) -> bool {
-        tokens.into_iter().map(|token| self.check(token)).any(|b| b)
+        tokens.iter().any(|token| self.check(token))
     }
 
     fn peek(&self) -> &Token {
