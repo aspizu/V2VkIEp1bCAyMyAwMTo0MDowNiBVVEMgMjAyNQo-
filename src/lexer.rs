@@ -422,9 +422,9 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                                 State::Normal => {
                                     self.state = State::Single;
                                 }
-                                _ => {}
+                                State::Double => break 'escaped,
                             }
-                            break 'escaped;
+                            continue 'l;
                         }
                         b'"' => {
                             match self.state {
