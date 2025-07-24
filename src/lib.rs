@@ -69,8 +69,8 @@ fn _execute_command<'py>(
     let mut parser = Parser::new(&tokens, &arena);
     let script = parser.parse();
     let mut interpreter = Interpreter::new();
-    pyo3_async_runtimes::async_std::future_into_py(py, async move {
-        interpreter.run_script(&script).await;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        interpreter.run_script(&script).await?;
         let dbg = format!("{:?}", script);
         Python::with_gil(|py| Ok(dbg.into_pyobject(py)?.into_any().unbind()))
     })

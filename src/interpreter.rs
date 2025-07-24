@@ -1,11 +1,16 @@
 mod run_assigns;
 mod run_async;
+mod run_atom;
 mod run_binary;
 mod run_cmd;
 mod run_cond_expr;
 mod run_if;
 mod run_pipeline;
 mod run_sub_shell;
+
+use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
+
+use tokio::io;
 
 use crate::ast;
 
@@ -16,19 +21,23 @@ impl Interpreter {
         Interpreter {}
     }
 
-    pub async fn run_script(&mut self, script: &ast::Script) {
+    pub async fn run_script(&mut self, script: &ast::Script) -> io::Result<ExitStatus> {
+        let mut exitstatus = ExitStatus::from_raw(0);
         for stmt in &script.stmts {
-            self.run_stmt(stmt).await;
+            exitstatus = self.run_stmt(stmt).await?;
         }
+        Ok(exitstatus)
     }
 
-    pub async fn run_stmt(&mut self, stmt: &ast::Stmt) {
+    pub async fn run_stmt(&mut self, stmt: &ast::Stmt) -> io::Result<ExitStatus> {
+        let mut exitstatus = ExitStatus::from_raw(0);
         for expr in &stmt.exprs {
-            self.run_expr(expr).await;
+            exitstatus = self.run_expr(expr).await?;
         }
+        Ok(exitstatus)
     }
 
-    pub async fn run_expr(&mut self, expr: &ast::Expr) {
+    pub async fn run_expr(&mut self, expr: &ast::Expr) -> io::Result<ExitStatus> {
         match expr {
             ast::Expr::Assign(assigns) => self.run_assigns(assigns).await,
             ast::Expr::Binary(binary) => self.run_binary(binary).await,

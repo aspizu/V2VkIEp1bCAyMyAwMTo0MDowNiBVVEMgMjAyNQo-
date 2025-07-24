@@ -7,7 +7,7 @@ from rich import print
 
 
 async def main() -> None:
-    result = shl._lex_command(t"echo {'Hello, World!'}")  # pyright: ignore[reportAttributeAccessIssue]
+    result = shl._parse_command(t"echo src/*")  # pyright: ignore[reportAttributeAccessIssue]
     print(result)
 
 

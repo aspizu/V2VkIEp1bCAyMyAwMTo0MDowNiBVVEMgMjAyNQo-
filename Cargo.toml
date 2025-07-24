@@ -10,12 +10,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arcstr = "1.2.0"
-async-std = { version = "1.13.1", features = ["attributes"] }
 async-process = "1.7"
 bumpalo = "3.19.0"
 lalrpop-util = "0.22.2"
 pyo3 = "0.25.0"
-pyo3-async-runtimes = { version = "0.25.0", features = ["async-std"] }
+pyo3-async-runtimes = { version = "0.25.0", features = ["tokio-runtime"] }
+tokio = { version = "1.46.1", features = ["full"] }
 
 [build-dependencies]
 lalrpop = "0.22.2"
