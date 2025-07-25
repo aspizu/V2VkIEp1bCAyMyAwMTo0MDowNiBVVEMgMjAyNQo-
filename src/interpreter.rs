@@ -63,7 +63,9 @@ impl Interpreter {
         match expr {
             ast::Expr::Assign(assigns) => self.run_assigns(assigns).await,
             ast::Expr::Binary(binary) => self.run_binary(binary).await,
-            ast::Expr::Pipeline(pipeline) => self.run_pipeline(pipeline).await,
+            ast::Expr::Pipeline(pipeline) => {
+                self.run_pipeline(pipeline, stdin, stdout, stderr).await
+            }
             ast::Expr::Cmd(cmd) => self.run_cmd(cmd, stdin, stdout, stderr).await,
             ast::Expr::SubShell(sub_shell) => self.run_sub_shell(sub_shell).await,
             ast::Expr::If(if_) => self.run_if(if_).await,
@@ -109,6 +111,24 @@ where
         match stdout {
             Stdout::Inherit => Stdio::inherit(),
             Stdout::Pipe(_) => Stdio::piped(),
+        }
+    }
+}
+
+impl<T: io::AsyncRead + Unpin + Send> Stdin<T> {
+    pub fn as_dyn_reader(&mut self) -> Box<dyn io::AsyncRead + Send + Unpin + '_> {
+        match self {
+            Stdin::Pipe(inner) => Box::new(inner),
+            Stdin::Inherit => Box::new(tokio::io::empty()),
+        }
+    }
+}
+
+impl<T: io::AsyncWrite + Unpin + Send> Stdout<T> {
+    pub fn as_dyn_writer(&mut self) -> Box<dyn io::AsyncWrite + Send + Unpin + '_> {
+        match self {
+            Stdout::Pipe(inner) => Box::new(inner),
+            Stdout::Inherit => Box::new(tokio::io::empty()),
         }
     }
 }

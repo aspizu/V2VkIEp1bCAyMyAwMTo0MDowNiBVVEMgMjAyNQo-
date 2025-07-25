@@ -4,6 +4,7 @@ use super::Interpreter;
 use crate::{
     ast,
     interpreter::{Stdin, Stdout},
+    stringpool::StringPool,
 };
 use futures::future::{join_all, BoxFuture};
 use tokio::{io, process::Command};
@@ -16,12 +17,16 @@ impl Interpreter {
         stdout: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
         stderr: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
     ) -> io::Result<ExitStatus> {
-        let mut args: Vec<arcstr::ArcStr> = vec![];
+        let mut args = StringPool::new();
         for arg in &cmd.name_and_args {
-            args.push(self.run_atom(arg).await?);
+            self.run_atom(arg, &mut args).await?;
         }
-        let mut child = Command::new(args[0].as_str())
-            .args(args[1..].iter().map(|s| s.as_str()))
+        let mut child = Command::new(str::from_utf8(&args.get_strings()[0]).unwrap())
+            .args(
+                args.get_strings()[1..]
+                    .iter()
+                    .map(|s| str::from_utf8(s).unwrap()),
+            )
             .stdin(&mut *stdin)
             .stdout(&mut *stdout)
             .stderr(&mut *stderr)

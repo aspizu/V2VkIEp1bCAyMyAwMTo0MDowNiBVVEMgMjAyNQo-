@@ -1,3 +1,5 @@
+use bytes::BytesMut;
+
 use crate::{ast, tokens::Token};
 
 #[derive(Copy, Clone)]
@@ -27,13 +29,12 @@ enum IfClauseTok {
 impl IfClauseTok {
     fn parse(token: &Token, arena: &[u8]) -> Option<Self> {
         if let Token::Text(text) = token {
-            let text = str::from_utf8(arena.get(text.clone())?).ok()?;
-            match text {
-                "if" => Some(Self::If),
-                "else" => Some(Self::Else),
-                "elif" => Some(Self::Elif),
-                "then" => Some(Self::Then),
-                "fi" => Some(Self::Fi),
+            match &**text {
+                b"if" => Some(Self::If),
+                b"else" => Some(Self::Else),
+                b"elif" => Some(Self::Elif),
+                b"then" => Some(Self::Then),
+                b"fi" => Some(Self::Fi),
                 _ => None,
             }
         } else {
@@ -387,16 +388,17 @@ impl<'a> Parser<'a> {
     fn parse_assign(&mut self) -> Option<ast::Assign> {
         let old = self.current;
         if let Token::Text(txt) = self.peek().clone() {
-            let txt = str::from_utf8(&self.arena[txt.clone()]).unwrap();
             let start_idx = self.current;
             self.expect_text();
             let var_decl: Option<ast::Assign> = 'var_decl: {
-                if let Some((label, value)) = txt.split_once('=') {
+                if let Some((label, value)) = txt.split_once(|c| *c == b'=') {
+                    let label = BytesMut::from(label);
+                    let value = BytesMut::from(value);
                     // If it starts with = then it's not valid assignment (e.g. `=FOO`)
                     if label.is_empty() {
                         break 'var_decl None;
                     }
-                    if !is_valid_var_name(label) {
+                    if !is_valid_var_name(&label) {
                         break 'var_decl None;
                     }
                     if value.is_empty() {
@@ -477,11 +479,9 @@ impl<'a> Parser<'a> {
                     false
                 }
                 Token::Eof | Token::Semicolon | Token::Newline => false,
-                t => {
-                    !self
-                        .inside_subshell
-                        .is_some_and(|kind| Into::<Token>::into(kind) == *t)
-                }
+                t => !self
+                    .inside_subshell
+                    .is_some_and(|kind| Into::<Token>::into(kind) == *t),
             } {
                 let next = self.peek_n(1);
                 let next_delimits = self.delimits(next);
@@ -560,9 +560,8 @@ impl<'a> Parser<'a> {
                     | Token::DoubleQuotedText(text)
                     | Token::Text(text) => {
                         self.advance();
-                        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
-                        if peeked_is_text && !text.is_empty() && text.starts_with('~') {
-                            let text = &text[1..];
+                        if peeked_is_text && !text.is_empty() && text.starts_with(b"~") {
+                            let text = text.slice(1..);
                             atoms.push(ast::SimpleAtom::Tilde);
                             if !text.is_empty() {
                                 atoms.push(ast::SimpleAtom::Text(text.into()));
@@ -578,7 +577,6 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Token::Var(text) => {
-                        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
                         self.expect_var();
                         atoms.push(ast::SimpleAtom::Var(text.into()));
                         if next_delimits {
@@ -659,7 +657,6 @@ impl<'a> Parser<'a> {
             return false;
         };
         let stok: &str = (&token).into();
-        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
         if self.delimits(self.peek_n(1)) && text == stok {
             self.advance();
             self.expect_delimit();
@@ -675,7 +672,6 @@ impl<'a> Parser<'a> {
         };
         for token in tokens {
             let stok: &str = token.into();
-            let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
             if text == stok {
                 return true;
             }
@@ -688,7 +684,6 @@ impl<'a> Parser<'a> {
             let d = self.delimits(self.peek_n(1));
             let mut x = false;
             let mut tok = Token::Eof;
-            let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
             if d && text == if_clause_token {
                 tok = self.advance().clone();
                 x = true;
@@ -705,7 +700,6 @@ impl<'a> Parser<'a> {
         let Token::Text(text) = self.peek() else {
             return false;
         };
-        let text = str::from_utf8(&self.arena[text.clone()]).unwrap();
         text == if_clause_token
     }
 
@@ -807,18 +801,18 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn is_valid_var_name(var_name: &str) -> bool {
+fn is_valid_var_name(var_name: &[u8]) -> bool {
     if var_name.is_empty() {
         return false;
     }
 
-    let mut chars = var_name.chars();
+    let mut chars = var_name.iter().copied();
 
     // Check first character
     if let Some(first_char) = chars.next() {
         match first_char {
-            '0'..='9' => return false,
-            'a'..='z' | 'A'..='Z' | '_' => {}
+            b'0'..=b'9' => return false,
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {}
             _ => return false,
         }
     } else {
@@ -828,7 +822,7 @@ fn is_valid_var_name(var_name: &str) -> bool {
     // Check remaining characters
     for c in chars {
         match c {
-            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {}
+            b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'_' => {}
             _ => return false,
         }
     }

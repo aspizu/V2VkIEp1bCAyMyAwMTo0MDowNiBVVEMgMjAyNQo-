@@ -1,3 +1,4 @@
+use bytes::{Bytes, BytesMut};
 use pyo3::{types::PyAnyMethods, PyResult};
 
 use crate::{ast::RedirectFlags, tokens::Token};
@@ -93,7 +94,8 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                     for c in text.as_bytes() {
                         self.append_char_to_str_pool(*c);
                     }
-                    self.tokens.push(Token::Text(start..self.j));
+                    let str = BytesMut::from(&self.arena[start..self.j]).freeze();
+                    self.tokens.push(Token::Text(str));
                     self.word_start = self.j;
                 } else {
                     self.break_word(false);
@@ -276,6 +278,7 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                             }
                             self.break_word(false);
                             let var_tok = self.eat_var();
+                            let str = BytesMut::from(&self.arena[self.word_start..self.j]).freeze();
                             match var_tok.len() {
                                 0 => {
                                     self.append_char_to_str_pool(b'$');
@@ -286,11 +289,11 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
                                     if c.is_ascii_digit() {
                                         self.tokens.push(Token::VarArgv(c - b'0'));
                                     } else {
-                                        self.tokens.push(Token::Var(var_tok));
+                                        self.tokens.push(Token::Var(str));
                                     }
                                 }
                                 _ => {
-                                    self.tokens.push(Token::Var(var_tok));
+                                    self.tokens.push(Token::Var(str));
                                 }
                             }
                             self.word_start = self.j;
@@ -571,10 +574,11 @@ impl<'a, 'b, 'c, 'py> Lexer<'a, 'b, 'c, 'py> {
         let start = self.word_start;
         let end = self.j;
         if start != end || self.is_immediately_escaped_quote() {
+            let str = BytesMut::from(&self.arena[start..end]).freeze();
             match self.state {
-                State::Normal => self.tokens.push(Token::Text(start..end)),
-                State::Single => self.tokens.push(Token::SingleQuotedText(start..end)),
-                State::Double => self.tokens.push(Token::DoubleQuotedText(start..end)),
+                State::Normal => self.tokens.push(Token::Text(str)),
+                State::Single => self.tokens.push(Token::SingleQuotedText(str)),
+                State::Double => self.tokens.push(Token::DoubleQuotedText(str)),
             }
             if add_delimiter {
                 self.tokens.push(Token::Delimit);

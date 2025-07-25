@@ -1,4 +1,4 @@
-use arcstr::ArcStr;
+use bytes::Bytes;
 
 #[derive(Debug, Clone)]
 pub struct Script {
@@ -37,7 +37,7 @@ impl Expr {
 
 #[derive(Debug, Clone)]
 pub struct Assign {
-    pub label: ArcStr,
+    pub label: Bytes,
     pub value: Atom,
 }
 
@@ -201,9 +201,9 @@ pub enum Atom {
 
 #[derive(Debug, Clone)]
 pub enum SimpleAtom {
-    Var(ArcStr),
+    Var(Bytes),
     VarArgv(u8),
-    Text(ArcStr),
+    Text(Bytes),
     Asterisk,
     DoubleAsterisk,
     BraceBegin,
@@ -239,8 +239,8 @@ impl Atom {
 
     pub fn merge(this: Atom, right: Atom) -> CompoundAtom {
         if this.simple().is_some() && right.simple().is_some() {
-            let this = this.simple().unwrap().clone();
-            let right = right.simple().unwrap().clone();
+            let this: SimpleAtom = this.simple().unwrap().clone();
+            let right: SimpleAtom = right.simple().unwrap().clone();
             let brace_expansion_hint =
                 matches!(this, SimpleAtom::BraceBegin | SimpleAtom::BraceEnd)
                     || matches!(right, SimpleAtom::BraceBegin | SimpleAtom::BraceEnd);

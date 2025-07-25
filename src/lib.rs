@@ -1,7 +1,10 @@
+#![feature(slice_split_once)]
+
 mod ast;
 mod interpreter;
 mod lexer;
 mod parser;
+mod stringpool;
 mod templatelib;
 mod tokens;
 
@@ -11,7 +14,6 @@ use crate::{
     interpreter::{Interpreter, Stdin, Stdout},
     lexer::{Lexer, PLACEHOLDER},
     parser::Parser,
-    tokens::stringify_tokens,
 };
 
 fn split_template<'py>(command: Bound<'py, PyAny>) -> PyResult<(Vec<Bound<'py, PyAny>>, Vec<u8>)> {
@@ -30,17 +32,17 @@ fn split_template<'py>(command: Bound<'py, PyAny>) -> PyResult<(Vec<Bound<'py, P
     Ok((pyobjects, bytes))
 }
 
-#[pyfunction]
-fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    let (pyobjects, bytes) = split_template(command)?;
-    let mut tokens = vec![];
-    let mut arena = vec![];
-    let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);
-    lexer.lex()?;
-    let dbg = stringify_tokens(&tokens, &arena);
-    let result = dbg.into_pyobject(py)?;
-    Ok(result.into_any())
-}
+// #[pyfunction]
+// fn _lex_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+//     let (pyobjects, bytes) = split_template(command)?;
+//     let mut tokens = vec![];
+//     let mut arena = vec![];
+//     let mut lexer = Lexer::new(&bytes, &mut tokens, &mut arena, &pyobjects);
+//     lexer.lex()?;
+//     let dbg = stringify_tokens(&tokens, &arena);
+//     let result = dbg.into_pyobject(py)?;
+//     Ok(result.into_any())
+// }
 
 #[pyfunction]
 fn _parse_command<'py>(py: Python<'py>, command: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -85,7 +87,7 @@ fn _execute_command<'py>(
 
 #[pymodule]
 fn shl(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(_lex_command, m)?)?;
+    // m.add_function(wrap_pyfunction!(_lex_command, m)?)?;
     m.add_function(wrap_pyfunction!(_parse_command, m)?)?;
     m.add_function(wrap_pyfunction!(_execute_command, m)?)?;
     Ok(())
