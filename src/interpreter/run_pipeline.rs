@@ -1,4 +1,4 @@
-use std::{io::Read, process::ExitStatus};
+use std::process::ExitStatus;
 
 use futures::future::BoxFuture;
 use tokio::io;
@@ -19,29 +19,26 @@ impl Interpreter {
     ) -> io::Result<ExitStatus> {
         let bump = bumpalo::Bump::new();
         let mut futures: Vec<BoxFuture<io::Result<ExitStatus>>> = vec![];
-        let mut pipe = None;
+        let mut prev = None;
         for (i, item) in pipeline.items.iter().rev().enumerate() {
-            let stdout: Stdout<Vec<u8>> = if i == 0 {
+            let (reader, writer) = io::simplex(1024);
+
+            let stdout = if i == 0 {
                 Stdout::Inherit
             } else {
-                Stdout::Pipe(pipe.take().unwrap())
+                Stdout::Pipe(writer)
             };
-            let stdin = vec![];
+            let stdin = Stdin::Pipe(prev.take().unwrap());
             match item {
                 ast::PipelineItem::Cmd(cmd) => {
-                    futures.push(Box::pin(self.run_cmd(
-                        cmd,
-                        &mut Stdin::Pipe(stdin.bytes()),
-                        &mut stdout,
-                        stderr,
-                    )));
+                    futures.push(Box::pin(self.run_cmd(cmd, &mut stdin, &mut stdout, stderr)));
                 }
                 ast::PipelineItem::Assigns(assigns) => todo!(),
                 ast::PipelineItem::SubShell(sub_shell) => todo!(),
                 ast::PipelineItem::If(_) => todo!(),
                 ast::PipelineItem::CondExpr(cond_expr) => todo!(),
             }
-            pipe.insert(stdin);
+            prev.insert(reader);
         }
         todo!()
     }
