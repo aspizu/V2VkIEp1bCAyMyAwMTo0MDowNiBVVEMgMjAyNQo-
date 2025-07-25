@@ -13,9 +13,9 @@ impl Interpreter {
     pub async fn run_cmd(
         &mut self,
         cmd: &ast::Cmd,
-        stdin: &mut Stdin<impl io::AsyncRead + Unpin + Send>,
-        stdout: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
-        stderr: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
+        stdin: Stdin,
+        stdout: Stdout,
+        stderr: Stdout,
     ) -> io::Result<ExitStatus> {
         let mut args = StringPool::new();
         for arg in &cmd.name_and_args {
@@ -27,24 +27,24 @@ impl Interpreter {
                     .iter()
                     .map(|s| str::from_utf8(s).unwrap()),
             )
-            .stdin(&mut *stdin)
-            .stdout(&mut *stdout)
-            .stderr(&mut *stderr)
+            .stdin(&stdin)
+            .stdout(&stdout)
+            .stderr(&stderr)
             .spawn()
             .unwrap();
         let bump = bumpalo::Bump::new();
         let mut futures: Vec<BoxFuture<io::Result<u64>>> = vec![];
         if let Stdin::Pipe(stdin) = stdin {
             let child_stdin = bump.alloc(child.stdin.take().unwrap());
-            futures.push(Box::pin(io::copy(stdin, child_stdin)));
+            futures.push(Box::pin(io::copy(&mut stdin.lock().await, child_stdin)));
         }
         if let Stdout::Pipe(stdout) = stdout {
             let child_stdout = bump.alloc(child.stdout.take().unwrap());
-            futures.push(Box::pin(io::copy(child_stdout, stdout)));
+            futures.push(Box::pin(io::copy(child_stdout, &mut stdout.lock().await)));
         }
         if let Stdout::Pipe(stderr) = stderr {
             let child_stderr = bump.alloc(child.stderr.take().unwrap());
-            futures.push(Box::pin(io::copy(child_stderr, stderr)));
+            futures.push(Box::pin(io::copy(child_stderr, &mut stderr.lock().await)));
         }
         for result in join_all(futures).await {
             result?;

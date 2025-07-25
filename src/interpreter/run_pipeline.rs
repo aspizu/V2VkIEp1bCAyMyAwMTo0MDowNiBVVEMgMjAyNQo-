@@ -1,7 +1,7 @@
-use std::process::ExitStatus;
+use std::{process::ExitStatus, sync::Arc};
 
 use futures::future::{join_all, BoxFuture};
-use tokio::io;
+use tokio::{io, sync::Mutex};
 
 use super::Interpreter;
 use crate::{
@@ -13,9 +13,9 @@ impl Interpreter {
     pub async fn run_pipeline(
         &mut self,
         pipeline: &ast::Pipeline,
-        stdin: &mut Stdin<impl io::AsyncRead + Unpin + Send>,
-        stdout: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
-        stderr: &mut Stdout<impl io::AsyncWrite + Unpin + Send>,
+        stdin: Stdin,
+        stdout: Stdout,
+        stderr: Stdout,
     ) -> io::Result<ExitStatus> {
         let bump = bumpalo::Bump::new();
         let mut futures: Vec<BoxFuture<io::Result<ExitStatus>>> = vec![];
@@ -25,16 +25,16 @@ impl Interpreter {
             let stdout = if i == pipeline.items.len() - 1 {
                 Stdout::Inherit
             } else {
-                Stdout::Pipe(writer)
+                Stdout::Pipe(Arc::new(Mutex::new(writer)))
             };
             let stdin = if let Some(prev) = prev.take() {
-                Stdin::Pipe(prev)
+                Stdin::Pipe(Arc::new(Mutex::new(prev)))
             } else {
                 Stdin::Inherit
             };
             match item {
                 ast::PipelineItem::Cmd(cmd) => {
-                    futures.push(Box::pin(self.run_cmd(cmd, &mut stdin, &mut stdout, stderr)));
+                    futures.push(Box::pin(self.run_cmd(cmd, stdin, stdout, stderr)));
                 }
                 ast::PipelineItem::Assigns(assigns) => todo!(),
                 ast::PipelineItem::SubShell(sub_shell) => todo!(),

@@ -1,5 +1,6 @@
-use arcstr::ArcStr;
-use tokio::io;
+use std::sync::Arc;
+
+use tokio::{io, sync::Mutex};
 
 use crate::{
     ast,
@@ -55,18 +56,20 @@ impl Interpreter {
         quoted: bool,
         out: &mut StringPool,
     ) -> io::Result<()> {
-        let mut stdout: Vec<u8> = vec![];
+        let stdout = Arc::new(Mutex::new(vec![]));
         Box::pin(self.run_script(
             script,
-            &mut Stdin::<&[u8]>::Inherit,
-            &mut Stdout::Pipe(&mut stdout),
-            &mut Stdout::<Vec<u8>>::Inherit,
+            Stdin::Inherit,
+            Stdout::Pipe(stdout.clone()),
+            Stdout::Inherit,
         ))
         .await?;
+        let stdout = stdout.lock().await;
+        let stdout = stdout.as_slice();
         if quoted {
-            out.push_str(&stdout);
+            out.push_str(stdout);
         } else {
-            word_splitting(&stdout, out);
+            word_splitting(stdout, out);
         }
         Ok(())
     }

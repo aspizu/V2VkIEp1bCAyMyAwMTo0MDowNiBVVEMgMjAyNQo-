@@ -73,12 +73,7 @@ fn _execute_command<'py>(
     let mut interpreter = Interpreter::new();
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         interpreter
-            .run_script(
-                &script,
-                &mut Stdin::<&[u8]>::Inherit,
-                &mut Stdout::<Vec<u8>>::Inherit,
-                &mut Stdout::<Vec<u8>>::Inherit,
-            )
+            .run_script(&script, Stdin::Inherit, Stdout::Inherit, Stdout::Inherit)
             .await?;
         let dbg = format!("{:?}", script);
         Python::with_gil(|py| Ok(dbg.into_pyobject(py)?.into_any().unbind()))
