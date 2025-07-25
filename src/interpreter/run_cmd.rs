@@ -1,25 +1,22 @@
-use std::{marker::Unpin, os::unix::process::ExitStatusExt, process::ExitStatus};
-
-use super::Interpreter;
 use crate::{
     ast,
-    interpreter::{Stdin, Stdout},
+    interpreter::{run_atom::run_atom, Stdin, Stdout},
     stringpool::StringPool,
 };
 use futures::future::{join_all, BoxFuture};
+use std::{future::Future, ops::DerefMut, os::unix::process::ExitStatusExt, process::ExitStatus};
 use tokio::{io, process::Command};
 
-impl Interpreter {
-    pub async fn run_cmd(
-        &mut self,
-        cmd: &ast::Cmd,
-        stdin: Stdin,
-        stdout: Stdout,
-        stderr: Stdout,
-    ) -> io::Result<ExitStatus> {
+pub fn run_cmd<'a, 'b>(
+    cmd: &'b ast::Cmd,
+    stdin: Stdin,
+    stdout: Stdout,
+    stderr: Stdout,
+) -> impl Future<Output = io::Result<ExitStatus>> + Send + use<'a, 'b> {
+    async move {
         let mut args = StringPool::new();
         for arg in &cmd.name_and_args {
-            self.run_atom(arg, &mut args).await?;
+            run_atom(arg, &mut args).await?;
         }
         let mut child = Command::new(str::from_utf8(&args.get_strings()[0]).unwrap())
             .args(
@@ -32,19 +29,37 @@ impl Interpreter {
             .stderr(&stderr)
             .spawn()
             .unwrap();
+        let mut stdin = if let Stdin::Pipe(stdin) = &stdin {
+            Some(stdin.lock().await)
+        } else {
+            None
+        };
+        let mut stdout = if let Stdout::Pipe(stdout) = &stdout {
+            Some(stdout.lock().await)
+        } else {
+            None
+        };
+        let mut stderr = if let Stdout::Pipe(stderr) = &stderr {
+            Some(stderr.lock().await)
+        } else {
+            None
+        };
         let bump = bumpalo::Bump::new();
         let mut futures: Vec<BoxFuture<io::Result<u64>>> = vec![];
-        if let Stdin::Pipe(stdin) = stdin {
+        if let Some(stdin) = &mut stdin {
             let child_stdin = bump.alloc(child.stdin.take().unwrap());
-            futures.push(Box::pin(io::copy(&mut stdin.lock().await, child_stdin)));
+            let stdin = stdin.deref_mut();
+            futures.push(Box::pin(io::copy(stdin, child_stdin)));
         }
-        if let Stdout::Pipe(stdout) = stdout {
+        if let Some(stdout) = &mut stdout {
             let child_stdout = bump.alloc(child.stdout.take().unwrap());
-            futures.push(Box::pin(io::copy(child_stdout, &mut stdout.lock().await)));
+            let stdout = stdout.deref_mut();
+            futures.push(Box::pin(io::copy(child_stdout, stdout)));
         }
-        if let Stdout::Pipe(stderr) = stderr {
+        if let Some(stderr) = &mut stderr {
             let child_stderr = bump.alloc(child.stderr.take().unwrap());
-            futures.push(Box::pin(io::copy(child_stderr, &mut stderr.lock().await)));
+            let stderr = stderr.deref_mut();
+            futures.push(Box::pin(io::copy(child_stderr, stderr)));
         }
         for result in join_all(futures).await {
             result?;

@@ -8,6 +8,16 @@ mod run_if;
 mod run_pipeline;
 mod run_sub_shell;
 
+use run_assigns::*;
+use run_async::*;
+use run_atom::*;
+use run_binary::*;
+use run_cmd::*;
+use run_cond_expr::*;
+use run_if::*;
+use run_pipeline::*;
+use run_sub_shell::*;
+
 use std::{
     marker::Unpin,
     os::unix::process::ExitStatusExt,
@@ -19,64 +29,47 @@ use tokio::{io, sync::Mutex};
 
 use crate::ast;
 
-pub struct Interpreter {}
-
-impl Interpreter {
-    pub fn new() -> Self {
-        Interpreter {}
+pub async fn run_script(
+    script: &ast::Script,
+    stdin: Stdin,
+    stdout: Stdout,
+    stderr: Stdout,
+) -> io::Result<ExitStatus> {
+    let mut exitstatus = ExitStatus::from_raw(0);
+    for stmt in &script.stmts {
+        exitstatus = run_stmt(stmt, stdin.clone(), stdout.clone(), stderr.clone()).await?;
     }
+    Ok(exitstatus)
+}
 
-    pub async fn run_script(
-        &mut self,
-        script: &ast::Script,
-        stdin: Stdin,
-        stdout: Stdout,
-        stderr: Stdout,
-    ) -> io::Result<ExitStatus> {
-        let mut exitstatus = ExitStatus::from_raw(0);
-        for stmt in &script.stmts {
-            exitstatus = self
-                .run_stmt(stmt, stdin.clone(), stdout.clone(), stderr.clone())
-                .await?;
-        }
-        Ok(exitstatus)
+pub async fn run_stmt(
+    stmt: &ast::Stmt,
+    stdin: Stdin,
+    stdout: Stdout,
+    stderr: Stdout,
+) -> io::Result<ExitStatus> {
+    let mut exitstatus = ExitStatus::from_raw(0);
+    for expr in &stmt.exprs {
+        exitstatus = run_expr(expr, stdin.clone(), stdout.clone(), stderr.clone()).await?;
     }
+    Ok(exitstatus)
+}
 
-    pub async fn run_stmt(
-        &mut self,
-        stmt: &ast::Stmt,
-        stdin: Stdin,
-        stdout: Stdout,
-        stderr: Stdout,
-    ) -> io::Result<ExitStatus> {
-        let mut exitstatus = ExitStatus::from_raw(0);
-        for expr in &stmt.exprs {
-            exitstatus = self
-                .run_expr(expr, stdin.clone(), stdout.clone(), stderr.clone())
-                .await?;
-        }
-        Ok(exitstatus)
-    }
-
-    pub async fn run_expr(
-        &mut self,
-        expr: &ast::Expr,
-        stdin: Stdin,
-        stdout: Stdout,
-        stderr: Stdout,
-    ) -> io::Result<ExitStatus> {
-        match expr {
-            ast::Expr::Assign(assigns) => self.run_assigns(assigns).await,
-            ast::Expr::Binary(binary) => self.run_binary(binary).await,
-            ast::Expr::Pipeline(pipeline) => {
-                self.run_pipeline(pipeline, stdin, stdout, stderr).await
-            }
-            ast::Expr::Cmd(cmd) => self.run_cmd(cmd, stdin, stdout, stderr).await,
-            ast::Expr::SubShell(sub_shell) => self.run_sub_shell(sub_shell).await,
-            ast::Expr::If(if_) => self.run_if(if_).await,
-            ast::Expr::CondExpr(cond_expr) => self.run_cond_expr(cond_expr).await,
-            ast::Expr::Async(expr) => self.run_async(expr).await,
-        }
+pub async fn run_expr(
+    expr: &ast::Expr,
+    stdin: Stdin,
+    stdout: Stdout,
+    stderr: Stdout,
+) -> io::Result<ExitStatus> {
+    match expr {
+        ast::Expr::Assign(assigns) => run_assigns(assigns).await,
+        ast::Expr::Binary(binary) => run_binary(binary).await,
+        ast::Expr::Pipeline(pipeline) => run_pipeline(pipeline, stdin, stdout, stderr).await,
+        ast::Expr::Cmd(cmd) => run_cmd(cmd, stdin, stdout, stderr).await,
+        ast::Expr::SubShell(sub_shell) => run_sub_shell(sub_shell).await,
+        ast::Expr::If(if_) => run_if(if_).await,
+        ast::Expr::CondExpr(cond_expr) => run_cond_expr(cond_expr).await,
+        ast::Expr::Async(expr) => run_async(expr).await,
     }
 }
 
