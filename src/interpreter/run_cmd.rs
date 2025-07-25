@@ -4,8 +4,11 @@ use crate::{
     stringpool::StringPool,
 };
 use futures::future::{join_all, BoxFuture};
-use std::{future::Future, ops::DerefMut, os::unix::process::ExitStatusExt, process::ExitStatus};
-use tokio::{io, process::Command};
+use std::{future::Future, ops::DerefMut, process::ExitStatus};
+use tokio::{
+    io::{self, AsyncWriteExt},
+    process::Command,
+};
 
 pub fn run_cmd<'a, 'b>(
     cmd: &'b ast::Cmd,
@@ -64,6 +67,13 @@ pub fn run_cmd<'a, 'b>(
         for result in join_all(futures).await {
             result?;
         }
-        Ok(ExitStatus::from_raw(child.wait().await?.code().unwrap()))
+        let success = child.wait().await?;
+        if let Some(mut stdout) = stdout {
+            stdout.shutdown().await?;
+        }
+        if let Some(mut stderr) = stderr {
+            stderr.shutdown().await?;
+        }
+        Ok(success)
     }
 }

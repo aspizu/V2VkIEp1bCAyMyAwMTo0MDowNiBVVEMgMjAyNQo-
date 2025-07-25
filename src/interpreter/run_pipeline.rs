@@ -12,20 +12,19 @@ pub async fn run_pipeline(
     stdout: Stdout,
     stderr: Stdout,
 ) -> io::Result<ExitStatus> {
-    let bump = bumpalo::Bump::new();
     let mut futures: Vec<BoxFuture<io::Result<ExitStatus>>> = vec![];
     let mut prev = None;
-    for (i, item) in pipeline.items.iter().rev().enumerate() {
+    for (i, item) in pipeline.items.iter().enumerate() {
         let (reader, writer) = io::simplex(1024);
         let stdout = if i == pipeline.items.len() - 1 {
-            Stdout::Inherit
+            stdout.clone()
         } else {
             Stdout::Pipe(Arc::new(Mutex::new(writer)))
         };
         let stdin = if let Some(prev) = prev.take() {
             Stdin::Pipe(Arc::new(Mutex::new(prev)))
         } else {
-            Stdin::Inherit
+            stdin.clone()
         };
         match item {
             ast::PipelineItem::Cmd(cmd) => {
