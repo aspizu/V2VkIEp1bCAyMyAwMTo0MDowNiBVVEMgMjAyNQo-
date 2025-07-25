@@ -46,7 +46,9 @@ impl Interpreter {
             let child_stderr = bump.alloc(child.stderr.take().unwrap());
             futures.push(Box::pin(io::copy(child_stderr, stderr)));
         }
-        join_all(futures).await;
+        for result in join_all(futures).await {
+            result?;
+        }
         Ok(ExitStatus::from_raw(child.wait().await?.code().unwrap()))
     }
 }

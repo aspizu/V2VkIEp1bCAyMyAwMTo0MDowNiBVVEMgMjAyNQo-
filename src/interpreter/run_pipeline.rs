@@ -1,6 +1,6 @@
 use std::process::ExitStatus;
 
-use futures::future::BoxFuture;
+use futures::future::{join_all, BoxFuture};
 use tokio::io;
 
 use super::Interpreter;
@@ -22,13 +22,16 @@ impl Interpreter {
         let mut prev = None;
         for (i, item) in pipeline.items.iter().rev().enumerate() {
             let (reader, writer) = io::simplex(1024);
-
-            let stdout = if i == 0 {
+            let stdout = if i == pipeline.items.len() - 1 {
                 Stdout::Inherit
             } else {
                 Stdout::Pipe(writer)
             };
-            let stdin = Stdin::Pipe(prev.take().unwrap());
+            let stdin = if let Some(prev) = prev.take() {
+                Stdin::Pipe(prev)
+            } else {
+                Stdin::Inherit
+            };
             match item {
                 ast::PipelineItem::Cmd(cmd) => {
                     futures.push(Box::pin(self.run_cmd(cmd, &mut stdin, &mut stdout, stderr)));
@@ -39,6 +42,9 @@ impl Interpreter {
                 ast::PipelineItem::CondExpr(cond_expr) => todo!(),
             }
             prev.insert(reader);
+        }
+        for result in join_all(futures).await {
+            result?;
         }
         todo!()
     }
